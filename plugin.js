@@ -1,4 +1,3 @@
-
 const BASE = "https://veohentai.com";
 const PLAYER = "https://hentaiplayer.com";
 const TIMEOUT = 12000;
@@ -173,7 +172,7 @@ function extractImage(block, pageUrl) {
 
 function parseCards(html, pageUrl) {
   const re =
-    /<a\b[^>]*href\s*=\s*(["'])(?:https?:\/\/veohentai\.com)?\/ver\/([^"'\/\s?#]+)/gi;
+    /<a\b[^>]*href\s*=\s*(["'])(?:https?:\/\/(?:www\.)?veohentai\.com)?\/ver\/([^"'\/\s?#]+)/gi;
 
   const marks = [];
   let m;
@@ -255,18 +254,18 @@ function seriesItem(c) {
     title: c.title,
     kind: "series",
     poster: c.poster,
-    genres: ["hentai"]
+    genres: ["anime"]
   };
 }
 
 function episodeItem(c) {
   return {
     id: "v~" + c.slug,
-    ref: "v~" + c.slug,
+    ref: "v~" + c.slug + "~1",
     title: c.title,
     kind: "movie",
     poster: c.poster,
-    genres: ["hentai"]
+    genres: ["anime"]
   };
 }
 
@@ -390,7 +389,7 @@ export async function home() {
       rows.push({
         id,
         title,
-        genre: "hentai",
+        genre: "anime",
         items: items.slice(0, MAX_ITEMS)
       });
     }
@@ -478,7 +477,7 @@ export async function episodes(ref) {
     list.push({
       season: 1,
       number: ep.num,
-      ref: "v~" + c.slug,
+      ref: "v~" + ep.slug + "~" + ep.num,
       title: c.title || msg(
         "Episodio " + ep.num,
         "Episode " + ep.num
@@ -501,7 +500,7 @@ export async function episodes(ref) {
         200
       ),
       poster: seriesPoster,
-      genres: ["hentai"]
+      genres: ["anime"]
     },
     episodes: list
   };
@@ -564,18 +563,19 @@ function parseServers(page) {
   return out;
 }
 
-async function episodeHtml(slug) {
-  const url = abs("/ver/" + slug + "/");
+async function episodeHtml(slug, num) {
+  const number = Number(num) || 1;
+  const episodeSlug = /-episodio-\d+$/i.test(slug)
+    ? slug
+    : slug + "-episodio-" + number;
 
   try {
-    return await getText(url, BASE + "/");
+    return await getText(abs("/ver/" + episodeSlug + "/"), BASE + "/");
   } catch (e) {
-    if (!/-episodio-\d+$/.test(slug)) {
+    // Algunas películas o episodios únicos usan /ver/slug/ sin sufijo.
+    if (number === 1) {
       try {
-        return await getText(
-          abs("/ver/" + slug + "-episodio-1/"),
-          BASE + "/"
-        );
+        return await getText(abs("/ver/" + slug + "/"), BASE + "/");
       } catch {}
     }
 
@@ -631,11 +631,12 @@ export async function resolve(ref) {
   }
 
   const slug = parts[1];
+  const num = Number(parts[2]) || 1;
 
   let html;
 
   try {
-    html = await episodeHtml(slug);
+    html = await episodeHtml(slug, num);
   } catch (e) {
     throw kino.error(
       "not_found",
