@@ -1,7 +1,7 @@
 {
   "id": "veohentai",
   "name": "VeoHentai",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "apiVersion": 6,
   "entry": "plugin.js",
   "description": "Hentai subtitulado al español: catálogo, series y episodios con reproductor propio del sitio",
