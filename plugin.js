@@ -1,12 +1,3 @@
-// Kino plugin: VeoHentai (veohentai.com) — hentai subtitulado al español.
-// Solo lee lo que cualquiera vería en el sitio sin cuenta: el catálogo, las series,
-// los episodios y el reproductor que el propio sitio incrusta en cada episodio.
-//
-// Refs:
-//   s~<slug>        una serie
-//   v~<slug>        un episodio (slug completo, p. ej. "sister-breeder-episodio-6")
-//   p~<base64>      un servidor concreto (las "alternativas" de un Stream)
-
 const BASE = "https://veohentai.com";
 const PLAYER = "https://hentaiplayer.com";
 const TIMEOUT = 12000;
@@ -14,9 +5,7 @@ const MAX_ITEMS = 60;
 const MAX_EPISODES = 3000;
 
 function log(...args) {
-  try {
-    kino.log(...args);
-  } catch {}
+  try { kino.log(...args); } catch {}
 }
 
 function es() {
@@ -28,17 +17,19 @@ function msg(esText, enText) {
 }
 
 function hostOf(url) {
-  try {
-    return new URL(url).hostname.toLowerCase();
-  } catch {
-    return "";
-  }
+  try { return new URL(url).hostname.toLowerCase(); }
+  catch { return ""; }
 }
 
 async function getText(url, referer) {
   const headers = {};
   if (referer) headers.Referer = referer;
-  const r = await kino.fetch(url, { headers, timeoutMs: TIMEOUT });
+
+  const r = await kino.fetch(url, {
+    headers,
+    timeoutMs: TIMEOUT
+  });
+
   if (!r.ok) throw new Error(url + " respondió " + r.status);
   return r.text();
 }
@@ -59,7 +50,6 @@ function clean(text, max) {
     .slice(0, max || 200);
 }
 
-// Normaliza URLs de imágenes: absolutas, relativas y protocol-relative.
 function imageUrl(value, pageUrl) {
   if (!value || typeof value !== "string") return undefined;
 
@@ -68,43 +58,45 @@ function imageUrl(value, pageUrl) {
   if (!v || /^data:/i.test(v)) return undefined;
   if (v.startsWith("//")) v = "https:" + v;
 
-  try {
-    return new URL(v, pageUrl || BASE + "/").href;
-  } catch {
-    return undefined;
-  }
+  try { return new URL(v, pageUrl || BASE + "/").href; }
+  catch { return undefined; }
 }
 
-// Base64 con o sin relleno, estándar o url-safe.
+function validPoster(value, pageUrl) {
+  const url = imageUrl(value, pageUrl);
+  if (!url) return undefined;
+
+  const filename = url.split("/").pop().split("?")[0].toLowerCase();
+
+  if (
+    filename.endsWith(".svg") ||
+    /^(logo|favicon|icon|avatar|placeholder)([-_.]|$)/i.test(filename)
+  ) {
+    return undefined;
+  }
+
+  return url;
+}
+
 function b64(value) {
   let s = String(value || "").replace(/-/g, "+").replace(/_/g, "/");
   while (s.length % 4) s += "=";
   return atob(s);
 }
 
-// Base64 seguro para URLs con caracteres fuera de Latin-1.
 function encodeRef(url) {
-  try {
-    return btoa(encodeURIComponent(url));
-  } catch {
-    return btoa(url);
-  }
+  try { return btoa(encodeURIComponent(url)); }
+  catch { return btoa(url); }
 }
 
 function decodeRef(value) {
   let raw;
 
-  try {
-    raw = atob(value);
-  } catch {
-    throw kino.error("not_found", "ese servidor ya no sirve");
-  }
+  try { raw = atob(value); }
+  catch { throw kino.error("not_found", "ese servidor ya no sirve"); }
 
-  try {
-    return decodeURIComponent(raw);
-  } catch {
-    return raw;
-  }
+  try { return decodeURIComponent(raw); }
+  catch { return raw; }
 }
 
 function attr(tag, name) {
@@ -121,13 +113,13 @@ function srcsetUrl(value) {
 
   const candidates = value
     .split(",")
-    .map((part) => part.trim().split(/\s+/)[0])
+    .map(part => part.trim().split(/\s+/)[0])
     .filter(Boolean);
 
   return candidates.length ? candidates[candidates.length - 1] : "";
 }
 
-// Extrae portadas normales, lazy-load, picture, srcset y metadatos sociales.
+// Extrae imágenes evitando logos, iconos y placeholders.
 function extractImage(block, pageUrl) {
   if (!block) return undefined;
 
@@ -135,42 +127,42 @@ function extractImage(block, pageUrl) {
   const tagRe = /<(?:img|source)\b[^>]*>/gi;
   let m;
 
-  while ((m = tagRe.exec(block))) {
-    tags.push(m[0]);
-  }
+  while ((m = tagRe.exec(block))) tags.push(m[0]);
 
   const attributes = [
+    "data-poster",
     "data-src",
     "data-lazy-src",
     "data-original",
     "data-original-src",
     "data-image",
-    "data-poster",
     "data-thumb",
-    "src",
+    "src"
   ];
 
   for (const tag of tags) {
     for (const name of attributes) {
-      const url = imageUrl(attr(tag, name), pageUrl);
+      const url = validPoster(attr(tag, name), pageUrl);
       if (url) return url;
     }
 
-    const set = imageUrl(srcsetUrl(attr(tag, "srcset")), pageUrl);
+    const set = validPoster(srcsetUrl(attr(tag, "srcset")), pageUrl);
     if (set) return set;
 
-    const setLazy = imageUrl(srcsetUrl(attr(tag, "data-srcset")), pageUrl);
-    if (setLazy) return setLazy;
+    const lazy = validPoster(srcsetUrl(attr(tag, "data-srcset")), pageUrl);
+    if (lazy) return lazy;
   }
 
   const metaRe = /<meta\b[^>]*>/gi;
 
   while ((m = metaRe.exec(block))) {
     const tag = m[0];
-    const property = (attr(tag, "property") || attr(tag, "name")).toLowerCase();
+    const property = (
+      attr(tag, "property") || attr(tag, "name")
+    ).toLowerCase();
 
     if (property === "og:image" || property === "twitter:image") {
-      const url = imageUrl(attr(tag, "content"), pageUrl);
+      const url = validPoster(attr(tag, "content"), pageUrl);
       if (url) return url;
     }
   }
@@ -178,7 +170,6 @@ function extractImage(block, pageUrl) {
   return undefined;
 }
 
-// Corta el HTML en las tarjetas de una lista (enlaces a /ver/).
 function parseCards(html, pageUrl) {
   const re =
     /<a\b[^>]*href\s*=\s*(["'])(?:https?:\/\/veohentai\.com)?\/ver\/([^"'\/\s?#]+)/gi;
@@ -187,7 +178,11 @@ function parseCards(html, pageUrl) {
   let m;
 
   while ((m = re.exec(html))) {
-    marks.push({ slug: m[2], at: m.index, end: re.lastIndex });
+    marks.push({
+      slug: m[2],
+      at: m.index,
+      end: re.lastIndex
+    });
   }
 
   const out = [];
@@ -201,14 +196,20 @@ function parseCards(html, pageUrl) {
 
     const from = marks[i].at;
     const next = i + 1 < marks.length ? marks[i + 1].at : from + 3000;
-
     const chunk = html.slice(from, next);
 
-    const previousEnd = i > 0 ? marks[i - 1].end : Math.max(0, from - 1200);
-    const before = html.slice(Math.max(previousEnd, from - 1200), from);
+    const previousEnd = i > 0
+      ? marks[i - 1].end
+      : Math.max(0, from - 1200);
+
+    const before = html.slice(
+      Math.max(previousEnd, from - 1200),
+      from
+    );
 
     const poster =
-      extractImage(chunk, pageUrl) || extractImage(before, pageUrl);
+      extractImage(chunk, pageUrl) ||
+      extractImage(before, pageUrl);
 
     const titleM =
       /<h[1-6]\b[^>]*>([\s\S]*?)<\/h[1-6]>/i.exec(chunk) ||
@@ -223,7 +224,7 @@ function parseCards(html, pageUrl) {
     out.push({
       slug,
       title: title || slug.replace(/-/g, " "),
-      poster,
+      poster
     });
   }
 
@@ -231,8 +232,19 @@ function parseCards(html, pageUrl) {
 }
 
 function splitEpisode(slug) {
-  const m = /^(.*)-episodio-(\d+)$/.exec(slug);
-  return m ? { slug: m[1], num: Number(m[2]) } : null;
+  const m = /^(.*)-episodio-(\d+)$/i.exec(slug);
+
+  return m
+    ? { slug: m[1], num: Number(m[2]) }
+    : null;
+}
+
+function seriesTitle(title, slug) {
+  const cleaned = clean(title, 200)
+    .replace(/\s*[-–|:]?\s*episodio\s*\d+\s*$/i, "")
+    .trim();
+
+  return cleaned || slug.replace(/-/g, " ");
 }
 
 function seriesItem(c) {
@@ -242,7 +254,7 @@ function seriesItem(c) {
     title: c.title,
     kind: "series",
     poster: c.poster,
-    genres: ["hentai"],
+    genres: ["hentai"]
   };
 }
 
@@ -253,11 +265,40 @@ function episodeItem(c) {
     title: c.title,
     kind: "movie",
     poster: c.poster,
-    genres: ["hentai"],
+    genres: ["hentai"]
   };
 }
 
-// ---- search ----------------------------------------------------------------
+// Agrupa capítulos de una misma serie.
+function catalogItems(cards) {
+  const result = [];
+  const seriesMap = new Map();
+
+  for (const c of cards) {
+    const ep = splitEpisode(c.slug);
+
+    if (!ep) {
+      result.push(episodeItem(c));
+      continue;
+    }
+
+    if (seriesMap.has(ep.slug)) continue;
+
+    const grouped = {
+      slug: ep.slug,
+      title: seriesTitle(c.title, ep.slug),
+      poster: c.poster
+    };
+
+    const item = seriesItem(grouped);
+    seriesMap.set(ep.slug, item);
+    result.push(item);
+  }
+
+  return result;
+}
+
+// ---- búsqueda --------------------------------------------------------------
 
 export async function search(query) {
   await null;
@@ -265,7 +306,10 @@ export async function search(query) {
   const terms = [];
   const seenTerm = new Set();
 
-  for (const raw of [query && query.q, query && query.originalTitle]) {
+  for (const raw of [
+    query && query.q,
+    query && query.originalTitle
+  ]) {
     if (typeof raw !== "string" || !raw.trim()) continue;
 
     const text = kino.rank.shortQuery(raw).trim();
@@ -282,7 +326,7 @@ export async function search(query) {
   if (!terms.length) return [];
 
   const answers = await Promise.all(
-    terms.map(async (term) => {
+    terms.map(async term => {
       try {
         return await getText(
           abs("/buscar?q=" + encodeURIComponent(term)),
@@ -295,7 +339,7 @@ export async function search(query) {
     })
   );
 
-  if (answers.every((a) => a === null)) {
+  if (answers.every(a => a === null)) {
     throw kino.error("unavailable", "el sitio no respondió");
   }
 
@@ -307,28 +351,26 @@ export async function search(query) {
 
     for (const c of parseCards(html, BASE + "/")) {
       if (seen.has(c.slug)) continue;
-
       seen.add(c.slug);
       found.push(c);
     }
   }
 
-  const relevant = kino.rank.filterRelevant(found, terms, (c) => c.title);
-
+  const relevant = kino.rank.filterRelevant(found, terms, c => c.title);
   const kept = relevant.length ? relevant : found;
 
-  const sorted = kino.rank.sortBySimilarity(kept, terms, (c) => c.title);
+  const sorted = kino.rank.sortBySimilarity(kept, terms, c => c.title);
 
-  return sorted.slice(0, MAX_ITEMS).map(episodeItem);
+  return catalogItems(sorted).slice(0, MAX_ITEMS);
 }
 
-// ---- home ------------------------------------------------------------------
+// ---- inicio -----------------------------------------------------------------
 
 export async function home() {
   await null;
 
   const [front, top, seen, uncensored] = await Promise.all([
-    getText(BASE + "/", BASE + "/").catch((e) => {
+    getText(BASE + "/", BASE + "/").catch(e => {
       log("Inicio falló", e.message);
       return null;
     }),
@@ -337,7 +379,7 @@ export async function home() {
 
     getText(abs("/explorar/?orden=vistas"), BASE + "/").catch(() => null),
 
-    getText(abs("/genero/hentai-sin-censura/"), BASE + "/").catch(() => null),
+    getText(abs("/genero/hentai-sin-censura/"), BASE + "/").catch(() => null)
   ]);
 
   const rows = [];
@@ -348,7 +390,7 @@ export async function home() {
         id,
         title,
         genre: "hentai",
-        items: items.slice(0, MAX_ITEMS),
+        items: items.slice(0, MAX_ITEMS)
       });
     }
   };
@@ -357,7 +399,7 @@ export async function home() {
     push(
       "recientes",
       msg("Recién agregados", "Recently added"),
-      parseCards(front, BASE + "/").map(episodeItem)
+      catalogItems(parseCards(front, BASE + "/"))
     );
   }
 
@@ -365,7 +407,7 @@ export async function home() {
     push(
       "tendencias",
       msg("Tendencias de la semana", "Trending this week"),
-      parseCards(top, BASE + "/").map(episodeItem)
+      catalogItems(parseCards(top, BASE + "/"))
     );
   }
 
@@ -373,7 +415,7 @@ export async function home() {
     push(
       "vistos",
       msg("Los más vistos", "Most watched"),
-      parseCards(seen, BASE + "/").map(episodeItem)
+      catalogItems(parseCards(seen, BASE + "/"))
     );
   }
 
@@ -381,7 +423,7 @@ export async function home() {
     push(
       "sin-censura",
       msg("Sin censura", "Uncensored"),
-      parseCards(uncensored, BASE + "/").map(episodeItem)
+      catalogItems(parseCards(uncensored, BASE + "/"))
     );
   }
 
@@ -392,7 +434,7 @@ export async function home() {
   return rows;
 }
 
-// ---- episodes --------------------------------------------------------------
+// ---- episodios --------------------------------------------------------------
 
 export async function episodes(ref) {
   await null;
@@ -404,10 +446,12 @@ export async function episodes(ref) {
     throw kino.error("not_found", "esa serie ya no existe");
   }
 
+  const seriesUrl = abs("/serie/" + slug + "/");
+
   let html;
 
   try {
-    html = await getText(abs("/serie/" + slug + "/"), BASE + "/");
+    html = await getText(seriesUrl, BASE + "/");
   } catch (e) {
     throw kino.error(
       "not_found",
@@ -416,12 +460,14 @@ export async function episodes(ref) {
   }
 
   const titleM = /<h1\b[^>]*>([\s\S]*?)<\/h1>/i.exec(html);
-  const seriesPoster = extractImage(html, abs("/serie/" + slug + "/"));
+
+  // Prioriza la portada del contenido principal, no el logo.
+  const seriesPoster = extractImage(html, seriesUrl);
 
   const list = [];
   const seen = new Set();
 
-  for (const c of parseCards(html, abs("/serie/" + slug + "/"))) {
+  for (const c of parseCards(html, seriesUrl)) {
     const ep = splitEpisode(c.slug);
 
     if (!ep || ep.slug !== slug || seen.has(c.slug)) continue;
@@ -432,8 +478,13 @@ export async function episodes(ref) {
       season: 1,
       number: ep.num,
       ref: "v~" + c.slug,
-      title: c.title || msg("Episodio " + ep.num, "Episode " + ep.num),
+      title: c.title || msg(
+        "Episodio " + ep.num,
+        "Episode " + ep.num
+      )
     });
+
+    if (list.length >= MAX_EPISODES) break;
   }
 
   if (!list.length) {
@@ -444,17 +495,19 @@ export async function episodes(ref) {
 
   return {
     series: {
-      title: clean(titleM ? titleM[1] : slug.replace(/-/g, " "), 200),
+      title: clean(
+        titleM ? titleM[1] : slug.replace(/-/g, " "),
+        200
+      ),
       poster: seriesPoster,
-      genres: ["hentai"],
+      genres: ["hentai"]
     },
-    episodes: list,
+    episodes: list
   };
 }
 
-// ---- episodio --------------------------------------------------------------
+// ---- reproductor ------------------------------------------------------------
 
-// Encuentra el iframe del reproductor dentro de la página del episodio.
 function parseEmbed(html) {
   const re = /<iframe\b[^>]*>/gi;
   let m;
@@ -471,10 +524,8 @@ function parseEmbed(html) {
   return loose ? loose[0] : "";
 }
 
-// Lee el data-id de la lista de servidores y lo convierte en MP4 + subtítulo.
 function parseServers(page) {
   const out = [];
-
   const re = /<li\b[^>]*\bdata-id\s*=\s*(["'])([\s\S]*?)\1/gi;
   let m;
 
@@ -495,16 +546,16 @@ function parseServers(page) {
     if (!/^https?:\/\//i.test(file)) continue;
 
     let subtitle;
-
     const sM = /[?&]s=([^&"'\s]+)/.exec(dataId);
 
     if (sM) {
-      try {
-        subtitle = b64(decodeURIComponent(sM[1]));
-      } catch {}
+      try { subtitle = b64(decodeURIComponent(sM[1])); }
+      catch {}
     }
 
-    if (subtitle && !/^https?:\/\//i.test(subtitle)) subtitle = undefined;
+    if (subtitle && !/^https?:\/\//i.test(subtitle)) {
+      subtitle = undefined;
+    }
 
     out.push({ file, subtitle, dataId });
   }
@@ -520,7 +571,10 @@ async function episodeHtml(slug) {
   } catch (e) {
     if (!/-episodio-\d+$/.test(slug)) {
       try {
-        return await getText(abs("/ver/" + slug + "-episodio-1/"), BASE + "/");
+        return await getText(
+          abs("/ver/" + slug + "-episodio-1/"),
+          BASE + "/"
+        );
       } catch {}
     }
 
@@ -528,27 +582,26 @@ async function episodeHtml(slug) {
   }
 }
 
-// Convierte un data-id (o un mp4 directo) en un Stream reproducible.
 async function playServer(entry) {
-  if (/^https?:\/\//i.test(entry)) {
+  if (typeof entry === "string" && /^https?:\/\//i.test(entry)) {
     return {
       url: entry,
       mime: /\.m3u8(\?|$)/i.test(entry)
         ? "application/x-mpegURL"
         : "video/mp4",
-      headers: { Referer: PLAYER + "/" },
+      headers: { Referer: PLAYER + "/" }
     };
   }
 
   const stream = {
     url: entry.file,
     mime: "video/mp4",
-    headers: { Referer: PLAYER + "/" },
+    headers: { Referer: PLAYER + "/" }
   };
 
   if (entry.subtitle) {
     stream.subtitles = [
-      { url: entry.subtitle, label: "Español", lang: "es" },
+      { url: entry.subtitle, label: "Español", lang: "es" }
     ];
   }
 
@@ -596,7 +649,7 @@ export async function resolve(ref) {
       userMessage: msg(
         "Este episodio no tiene reproductor disponible.",
         "This episode has no available player."
-      ),
+      )
     });
   }
 
@@ -614,11 +667,13 @@ export async function resolve(ref) {
   const servers = parseServers(page);
 
   if (!servers.length) {
-    // Último recurso: el MP4 suelto en el JS del reproductor.
     const loose = /(https?:\/\/[^"'\s]+?\.mp4[^"'\s]*)/i.exec(page);
 
     if (loose) {
-      servers.push({ file: loose[1], dataId: loose[1] });
+      servers.push({
+        file: loose[1],
+        dataId: loose[1]
+      });
     }
   }
 
@@ -627,24 +682,26 @@ export async function resolve(ref) {
       userMessage: msg(
         "El reproductor no entregó ningún video.",
         "The player returned no video."
-      ),
+      )
     });
   }
 
   const stream = await playServer(servers[0]);
-
   const alternatives = [];
 
   for (let i = 1; i < servers.length; i++) {
     alternatives.push({
-      label: msg("Servidor " + (i + 1), "Server " + (i + 1)),
-      ref: "p~" + encodeRef(servers[i].dataId),
+      label: msg(
+        "Alternativa " + (i + 1),
+        "Alternative " + (i + 1)
+      ),
+      ref: "p~" + encodeRef(servers[i].dataId)
     });
   }
 
   return {
     ...stream,
-    label: msg("Servidor 1", "Server 1"),
-    alternatives,
+    label: msg("Reproducir", "Play"),
+    alternatives
   };
 }
