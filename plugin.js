@@ -1,3 +1,4 @@
+
 const BASE = "https://veohentai.com";
 const PLAYER = "https://hentaiplayer.com";
 const TIMEOUT = 12000;
@@ -325,6 +326,7 @@ function seriesItem(c) {
     ref: "s~" + c.slug,
     title: c.title,
     kind: "series",
+    adult: true,
     poster: c.poster,
     genres: ["anime"]
   };
@@ -336,6 +338,7 @@ function episodeItem(c) {
     ref: "v~" + c.slug + "~1",
     title: c.title,
     kind: "movie",
+    adult: true,
     poster: c.poster,
     genres: ["anime"]
   };
@@ -580,7 +583,8 @@ export async function episodes(ref) {
       title: c.title || msg(
         "Episodio " + ep.num,
         "Episode " + ep.num
-      )
+      ),
+      adult: true
     });
 
     if (list.length >= MAX_EPISODES) break;
@@ -601,7 +605,8 @@ export async function episodes(ref) {
         200
       ),
       poster: seriesPoster,
-      genres: ["anime"]
+      genres: ["anime"],
+      adult: true
     },
     episodes: list
   };
