@@ -3,9 +3,12 @@ const PLAYER = "https://hentaiplayer.com";
 const TIMEOUT = 12000;
 const MAX_ITEMS = 60;
 const MAX_EPISODES = 3000;
+const LOG_PREFIX = "[veohentai]";
 
 function log(...args) {
-  try { kino.log(...args); } catch {}
+  try {
+    kino.log(LOG_PREFIX, ...args);
+  } catch {}
 }
 
 function es() {
@@ -17,11 +20,16 @@ function msg(esText, enText) {
 }
 
 function hostOf(url) {
-  try { return new URL(url).hostname.toLowerCase(); }
-  catch { return ""; }
+  try {
+    return new URL(url).hostname.toLowerCase();
+  } catch {
+    return "";
+  }
 }
 
 async function getText(url, referer) {
+  log("GET", url);
+
   const headers = {};
   if (referer) headers.Referer = referer;
 
@@ -30,8 +38,47 @@ async function getText(url, referer) {
     timeoutMs: TIMEOUT
   });
 
-  if (!r.ok) throw new Error(url + " respondió " + r.status);
-  return r.text();
+  if (!r.ok) {
+    log("HTTP error", r.status, url);
+    throw new Error(url + " respondió " + r.status);
+  }
+
+  const body = await r.text();
+  log("GET OK", r.status, body.length + " bytes");
+
+  return body;
+}
+
+async function parallelLimit(items, limit, fn) {
+  const results = new Array(items.length);
+  let next = 0;
+
+  async function worker() {
+    while (true) {
+      const index = next++;
+      if (index >= items.length) return;
+
+      try {
+        results[index] = await fn(items[index], index);
+      } catch (e) {
+        log("Tarea falló", index, e.message);
+        results[index] = null;
+      }
+    }
+  }
+
+  const workers = [];
+  const count = Math.min(
+    Math.max(1, Number(limit) || 1),
+    items.length
+  );
+
+  for (let i = 0; i < count; i++) {
+    workers.push(worker());
+  }
+
+  await Promise.all(workers);
+  return results;
 }
 
 function abs(path) {
@@ -58,8 +105,11 @@ function imageUrl(value, pageUrl) {
   if (!v || /^data:/i.test(v)) return undefined;
   if (v.startsWith("//")) v = "https:" + v;
 
-  try { return new URL(v, pageUrl || BASE + "/").href; }
-  catch { return undefined; }
+  try {
+    return new URL(v, pageUrl || BASE + "/").href;
+  } catch {
+    return undefined;
+  }
 }
 
 function validPoster(value, pageUrl) {
@@ -80,23 +130,30 @@ function validPoster(value, pageUrl) {
 
 function b64(value) {
   let s = String(value || "").replace(/-/g, "+").replace(/_/g, "/");
+
   while (s.length % 4) s += "=";
+
   return atob(s);
 }
 
-function encodeRef(url) {
-  try { return btoa(encodeURIComponent(url)); }
-  catch { return btoa(url); }
+function encodeRef(value) {
+  return btoa(encodeURIComponent(String(value || "")));
 }
 
 function decodeRef(value) {
   let raw;
 
-  try { raw = atob(value); }
-  catch { throw kino.error("not_found", "ese servidor ya no sirve"); }
+  try {
+    raw = atob(value);
+  } catch {
+    throw kino.error("not_found", "ese servidor ya no sirve");
+  }
 
-  try { return decodeURIComponent(raw); }
-  catch { return raw; }
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
 }
 
 function attr(tag, name) {
@@ -116,10 +173,11 @@ function srcsetUrl(value) {
     .map(part => part.trim().split(/\s+/)[0])
     .filter(Boolean);
 
-  return candidates.length ? candidates[candidates.length - 1] : "";
+  return candidates.length
+    ? candidates[candidates.length - 1]
+    : "";
 }
 
-// Extrae imágenes evitando logos, iconos y placeholders.
 function extractImage(block, pageUrl) {
   if (!block) return undefined;
 
@@ -127,7 +185,9 @@ function extractImage(block, pageUrl) {
   const tagRe = /<(?:img|source)\b[^>]*>/gi;
   let m;
 
-  while ((m = tagRe.exec(block))) tags.push(m[0]);
+  while ((m = tagRe.exec(block))) {
+    tags.push(m[0]);
+  }
 
   const attributes = [
     "data-poster",
@@ -146,10 +206,18 @@ function extractImage(block, pageUrl) {
       if (url) return url;
     }
 
-    const set = validPoster(srcsetUrl(attr(tag, "srcset")), pageUrl);
+    const set = validPoster(
+      srcsetUrl(attr(tag, "srcset")),
+      pageUrl
+    );
+
     if (set) return set;
 
-    const lazy = validPoster(srcsetUrl(attr(tag, "data-srcset")), pageUrl);
+    const lazy = validPoster(
+      srcsetUrl(attr(tag, "data-srcset")),
+      pageUrl
+    );
+
     if (lazy) return lazy;
   }
 
@@ -157,6 +225,7 @@ function extractImage(block, pageUrl) {
 
   while ((m = metaRe.exec(block))) {
     const tag = m[0];
+
     const property = (
       attr(tag, "property") || attr(tag, "name")
     ).toLowerCase();
@@ -195,7 +264,10 @@ function parseCards(html, pageUrl) {
     seen.add(slug);
 
     const from = marks[i].at;
-    const next = i + 1 < marks.length ? marks[i + 1].at : from + 3000;
+    const next = i + 1 < marks.length
+      ? marks[i + 1].at
+      : from + 3000;
+
     const chunk = html.slice(from, next);
 
     const previousEnd = i > 0
@@ -269,7 +341,6 @@ function episodeItem(c) {
   };
 }
 
-// Agrupa capítulos de una misma serie.
 function catalogItems(cards) {
   const result = [];
   const seriesMap = new Map();
@@ -291,6 +362,7 @@ function catalogItems(cards) {
     };
 
     const item = seriesItem(grouped);
+
     seriesMap.set(ep.slug, item);
     result.push(item);
   }
@@ -298,7 +370,7 @@ function catalogItems(cards) {
   return result;
 }
 
-// ---- búsqueda --------------------------------------------------------------
+// ---- búsqueda ---------------------------------------------------------------
 
 export async function search(query) {
   await null;
@@ -325,19 +397,19 @@ export async function search(query) {
 
   if (!terms.length) return [];
 
-  const answers = await Promise.all(
-    terms.map(async term => {
-      try {
-        return await getText(
-          abs("/buscar?q=" + encodeURIComponent(term)),
-          BASE + "/"
-        );
-      } catch (e) {
-        log("búsqueda falló", term, e.message);
-        return null;
-      }
-    })
-  );
+  log("Búsqueda iniciada", terms.join(", "));
+
+  const answers = await parallelLimit(terms, 2, async term => {
+    try {
+      return await getText(
+        abs("/buscar?q=" + encodeURIComponent(term)),
+        BASE + "/"
+      );
+    } catch (e) {
+      log("Búsqueda falló", term, e.message);
+      return null;
+    }
+  });
 
   if (answers.every(a => a === null)) {
     throw kino.error("unavailable", "el sitio no respondió");
@@ -351,36 +423,55 @@ export async function search(query) {
 
     for (const c of parseCards(html, BASE + "/")) {
       if (seen.has(c.slug)) continue;
+
       seen.add(c.slug);
       found.push(c);
     }
   }
 
-  const relevant = kino.rank.filterRelevant(found, terms, c => c.title);
+  const relevant = kino.rank.filterRelevant(
+    found,
+    terms,
+    c => c.title
+  );
+
   const kept = relevant.length ? relevant : found;
 
-  const sorted = kino.rank.sortBySimilarity(kept, terms, c => c.title);
+  const sorted = kino.rank.sortBySimilarity(
+    kept,
+    terms,
+    c => c.title
+  );
 
-  return catalogItems(sorted).slice(0, MAX_ITEMS);
+  const result = catalogItems(sorted).slice(0, MAX_ITEMS);
+
+  log("Búsqueda terminada", result.length, "resultados");
+
+  return result;
 }
 
-// ---- inicio -----------------------------------------------------------------
+// ---- inicio ------------------------------------------------------------------
 
 export async function home() {
   await null;
 
-  const [front, top, seen, uncensored] = await Promise.all([
-    getText(BASE + "/", BASE + "/").catch(e => {
-      log("Inicio falló", e.message);
+  log("Cargando inicio");
+
+  const paths = [
+    { id: "front", url: BASE + "/" },
+    { id: "top", url: abs("/explorar/?orden=vistas-semana") },
+    { id: "seen", url: abs("/explorar/?orden=vistas") },
+    { id: "uncensored", url: abs("/genero/hentai-sin-censura/") }
+  ];
+
+  const pages = await parallelLimit(paths, 4, async entry => {
+    try {
+      return await getText(entry.url, BASE + "/");
+    } catch (e) {
+      log("Fila no disponible", entry.id, e.message);
       return null;
-    }),
-
-    getText(abs("/explorar/?orden=vistas-semana"), BASE + "/").catch(() => null),
-
-    getText(abs("/explorar/?orden=vistas"), BASE + "/").catch(() => null),
-
-    getText(abs("/genero/hentai-sin-censura/"), BASE + "/").catch(() => null)
-  ]);
+    }
+  });
 
   const rows = [];
 
@@ -392,8 +483,12 @@ export async function home() {
         genre: "anime",
         items: items.slice(0, MAX_ITEMS)
       });
+
+      log("Fila creada", id, items.length);
     }
   };
+
+  const [front, top, seen, uncensored] = pages;
 
   if (front) {
     push(
@@ -428,13 +523,16 @@ export async function home() {
   }
 
   if (!rows.length) {
+    log("Inicio vacío");
     throw kino.error("unavailable", "el sitio no devolvió nada");
   }
+
+  log("Inicio terminado", rows.length, "filas");
 
   return rows;
 }
 
-// ---- episodios --------------------------------------------------------------
+// ---- episodios ---------------------------------------------------------------
 
 export async function episodes(ref) {
   await null;
@@ -445,6 +543,8 @@ export async function episodes(ref) {
   if (parts[0] !== "s" || !slug) {
     throw kino.error("not_found", "esa serie ya no existe");
   }
+
+  log("Cargando episodios", slug);
 
   const seriesUrl = abs("/serie/" + slug + "/");
 
@@ -461,7 +561,6 @@ export async function episodes(ref) {
 
   const titleM = /<h1\b[^>]*>([\s\S]*?)<\/h1>/i.exec(html);
 
-  // Prioriza la portada del contenido principal, no el logo.
   const seriesPoster = extractImage(html, seriesUrl);
 
   const list = [];
@@ -477,7 +576,7 @@ export async function episodes(ref) {
     list.push({
       season: 1,
       number: ep.num,
-      ref: "v~" + ep.slug + "~" + ep.num,
+      ref: "v~" + c.slug,
       title: c.title || msg(
         "Episodio " + ep.num,
         "Episode " + ep.num
@@ -493,6 +592,8 @@ export async function episodes(ref) {
 
   list.sort((a, b) => a.number - b.number);
 
+  log("Episodios encontrados", slug, list.length);
+
   return {
     series: {
       title: clean(
@@ -506,7 +607,7 @@ export async function episodes(ref) {
   };
 }
 
-// ---- reproductor ------------------------------------------------------------
+// ---- reproductor -------------------------------------------------------------
 
 function parseEmbed(html) {
   const re = /<iframe\b[^>]*>/gi;
@@ -515,22 +616,30 @@ function parseEmbed(html) {
   while ((m = re.exec(html))) {
     const src = imageUrl(attr(m[0], "src"), BASE + "/");
 
-    if (src && hostOf(src).indexOf("hentaiplayer.com") !== -1) {
+    if (
+      src &&
+      hostOf(src).endsWith("hentaiplayer.com")
+    ) {
       return src;
     }
   }
 
-  const loose = /https?:\/\/hentaiplayer\.com\/v\/[A-Za-z0-9_-]+\/?/.exec(html);
+  const loose =
+    /https?:\/\/hentaiplayer\.com\/v\/[A-Za-z0-9_-]+\/?/.exec(html);
+
   return loose ? loose[0] : "";
 }
 
 function parseServers(page) {
   const out = [];
-  const re = /<li\b[^>]*\bdata-id\s*=\s*(["'])([\s\S]*?)\1/gi;
+  const re =
+    /<li\b[^>]*\bdata-id\s*=\s*(["'])([\s\S]*?)\1/gi;
+
   let m;
 
   while ((m = re.exec(page))) {
     const dataId = m[2].replace(/&amp;/gi, "&");
+
     const vidM = /[?&]vid=([^&"'\s]+)/.exec(dataId);
 
     if (!vidM) continue;
@@ -546,18 +655,24 @@ function parseServers(page) {
     if (!/^https?:\/\//i.test(file)) continue;
 
     let subtitle;
+
     const sM = /[?&]s=([^&"'\s]+)/.exec(dataId);
 
     if (sM) {
-      try { subtitle = b64(decodeURIComponent(sM[1])); }
-      catch {}
+      try {
+        subtitle = b64(decodeURIComponent(sM[1]));
+      } catch {}
     }
 
     if (subtitle && !/^https?:\/\//i.test(subtitle)) {
       subtitle = undefined;
     }
 
-    out.push({ file, subtitle, dataId });
+    out.push({
+      file,
+      subtitle,
+      dataId
+    });
   }
 
   return out;
@@ -565,17 +680,23 @@ function parseServers(page) {
 
 async function episodeHtml(slug, num) {
   const number = Number(num) || 1;
+
   const episodeSlug = /-episodio-\d+$/i.test(slug)
     ? slug
     : slug + "-episodio-" + number;
 
   try {
-    return await getText(abs("/ver/" + episodeSlug + "/"), BASE + "/");
+    return await getText(
+      abs("/ver/" + episodeSlug + "/"),
+      BASE + "/"
+    );
   } catch (e) {
-    // Algunas películas o episodios únicos usan /ver/slug/ sin sufijo.
     if (number === 1) {
       try {
-        return await getText(abs("/ver/" + slug + "/"), BASE + "/");
+        return await getText(
+          abs("/ver/" + slug + "/"),
+          BASE + "/"
+        );
       } catch {}
     }
 
@@ -590,23 +711,105 @@ async function playServer(entry) {
       mime: /\.m3u8(\?|$)/i.test(entry)
         ? "application/x-mpegURL"
         : "video/mp4",
-      headers: { Referer: PLAYER + "/" }
+      headers: {
+        Referer: PLAYER + "/"
+      }
     };
+  }
+
+  if (
+    !entry ||
+    typeof entry !== "object" ||
+    !/^https?:\/\//i.test(entry.file || "")
+  ) {
+    throw kino.error("not_found", "servidor de video inválido");
   }
 
   const stream = {
     url: entry.file,
-    mime: "video/mp4",
-    headers: { Referer: PLAYER + "/" }
+    mime: /\.m3u8(\?|$)/i.test(entry.file)
+      ? "application/x-mpegURL"
+      : "video/mp4",
+    headers: {
+      Referer: PLAYER + "/"
+    }
   };
 
-  if (entry.subtitle) {
+  if (
+    entry.subtitle &&
+    /^https?:\/\//i.test(entry.subtitle)
+  ) {
     stream.subtitles = [
-      { url: entry.subtitle, label: "Español", lang: "es" }
+      {
+        url: entry.subtitle,
+        label: "Español",
+        lang: "es"
+      }
     ];
   }
 
   return stream;
+}
+
+function decodeAlternative(ref) {
+  const raw = decodeRef(ref);
+
+  // Formato nuevo: objeto con archivo y subtítulo.
+  if (raw.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(raw);
+
+      if (
+        parsed &&
+        /^https?:\/\//i.test(parsed.file || "")
+      ) {
+        return parsed;
+      }
+    } catch {}
+  }
+
+  // Compatibilidad con referencias antiguas:
+  // data-id de HentaiPlayer.
+  const vidM = /[?&]vid=([^&"'\s]+)/.exec(raw);
+
+  if (vidM) {
+    let file;
+
+    try {
+      file = b64(decodeURIComponent(vidM[1])).split("|")[0];
+    } catch {
+      throw kino.error("not_found", "ese servidor ya no sirve");
+    }
+
+    if (!/^https?:\/\//i.test(file)) {
+      throw kino.error("not_found", "ese servidor ya no sirve");
+    }
+
+    let subtitle;
+    const sM = /[?&]s=([^&"'\s]+)/.exec(raw);
+
+    if (sM) {
+      try {
+        subtitle = b64(decodeURIComponent(sM[1]));
+      } catch {}
+    }
+
+    if (subtitle && !/^https?:\/\//i.test(subtitle)) {
+      subtitle = undefined;
+    }
+
+    return {
+      file,
+      subtitle
+    };
+  }
+
+  // También permite referencias antiguas que guardaban directamente URL.
+  if (/^https?:\/\//i.test(raw)) {
+    return raw;
+  }
+
+  throw kino.error("not_found", "ese servidor ya no sirve");
 }
 
 export async function resolve(ref) {
@@ -614,24 +817,28 @@ export async function resolve(ref) {
 
   const parts = String(ref || "").split("~");
 
+  // Resolver servidor alternativo.
   if (parts[0] === "p") {
-    let raw;
+    log("Resolviendo servidor alternativo");
 
-    try {
-      raw = decodeRef(parts.slice(1).join("~"));
-    } catch {
-      throw kino.error("not_found", "ese servidor ya no sirve");
-    }
+    const entry = decodeAlternative(
+      parts.slice(1).join("~")
+    );
 
-    return await playServer(raw);
+    return await playServer(entry);
   }
 
   if (parts[0] !== "v" || !parts[1]) {
-    throw kino.error("not_found", "esa dirección no es un episodio");
+    throw kino.error(
+      "not_found",
+      "esa dirección no es un episodio"
+    );
   }
 
   const slug = parts[1];
   const num = Number(parts[2]) || 1;
+
+  log("Resolviendo episodio", slug, num);
 
   let html;
 
@@ -669,12 +876,13 @@ export async function resolve(ref) {
   const servers = parseServers(page);
 
   if (!servers.length) {
-    const loose = /(https?:\/\/[^"'\s]+?\.mp4[^"'\s]*)/i.exec(page);
+    const loose =
+      /(https?:\/\/[^"'\s]+?\.mp4[^"'\s]*)/i.exec(page);
 
     if (loose) {
       servers.push({
         file: loose[1],
-        dataId: loose[1]
+        subtitle: undefined
       });
     }
   }
@@ -688,18 +896,27 @@ export async function resolve(ref) {
     });
   }
 
+  log("Servidores encontrados", servers.length);
+
   const stream = await playServer(servers[0]);
   const alternatives = [];
 
   for (let i = 1; i < servers.length; i++) {
+    const alternativeData = JSON.stringify({
+      file: servers[i].file,
+      subtitle: servers[i].subtitle
+    });
+
     alternatives.push({
       label: msg(
         "Alternativa " + (i + 1),
         "Alternative " + (i + 1)
       ),
-      ref: "p~" + encodeRef(servers[i].dataId)
+      ref: "p~" + encodeRef(alternativeData)
     });
   }
+
+  log("Resolución completada", slug);
 
   return {
     ...stream,
