@@ -1,10 +1,10 @@
 {
   "id": "veohentai",
   "name": "VeoHentai",
-  "version": "1.0.1",
-  "apiVersion": 6,
+  "version": "1.0.2",
+  "apiVersion": 20,
   "entry": "plugin.js",
-  "description": "Hentai subtitulado al español: catálogo, series y episodios con reproductor propio del sitio",
+  "description": "Hentai subtitulado al español: catálogo, series y episodios con reproductor original del sitio",
   "author": "Vaysin",
   "hosts": [
     "veohentai.com",
@@ -17,8 +17,14 @@
     "search",
     "home",
     "episodes",
-    "resolve"
+    "resolve",
+    "screen"
   ],
+  "screen": {
+    "label": "Reproductor",
+    "labelEn": "Player"
+  },
+  "visualBrowser": true,
   "color": "#E23A5E",
   "icon": "icon.png"
 }
