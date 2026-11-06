@@ -1,24 +1,41 @@
 {
   "id": "veohentai",
   "name": "VeoHentai",
-  "version": "1.0.2",
-  "apiVersion": 6,
+  "version": "1.0.1",
+  "apiVersion": 20,
   "entry": "plugin.js",
-  "description": "Hentai subtitulado al español: catálogo, series y episodios con reproductor propio del sitio",
-  "author": "Vaysin",
-  "hosts": [
-    "veohentai.com",
-    "*.veohentai.com",
-    "hentaiplayer.com",
-    "*.hentaiplayer.com"
-  ],
-  "streamHosts": "any",
+  "icon": "icon.png",
+  "description": "Catálogo de VeoHentai con acceso al reproductor original.",
+  "author": "veni",
+  "homepage": "https://veohentai.com",
+  "categories": ["anime", "adult", "series"],
   "capabilities": [
     "search",
     "home",
     "episodes",
-    "resolve"
+    "resolve",
+    "screen"
   ],
-  "color": "#E23A5E",
-  "icon": "icon.png"
+  "screen": {
+    "label": "VeoHentai",
+    "icon": "play",
+    "opensFrom": ["menu"]
+  },
+  "visualBrowser": true,
+  "hosts": [
+    "veohentai.com",
+    "www.veohentai.com",
+    "hentaiplayer.com",
+    "r2.1hanime.com",
+    "cdn.htstreaming.com"
+  ],
+  "fetchHosts": "any",
+  "streamHosts": "any",
+  "theme": {
+    "accent": "#FF3D71",
+    "onAccent": "#2A0713",
+    "background": "#140A10",
+    "surface": "#22121B",
+    "highlight": "#FFC2D4"
+  }
 }
