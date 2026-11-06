@@ -709,16 +709,36 @@ async function episodeHtml(slug, num) {
   }
 }
 
-async function playServer(entry) {
+// ---- CABECERAS DE REPRODUCCIÓN -----------------------------------------------
+
+function playbackHeaders(referer) {
+  // Usar la URL exacta del iframe como Referer.
+  // El Origin se obtiene del mismo reproductor.
+  let page = referer || PLAYER + "/";
+  let origin = PLAYER;
+
+  try {
+    origin = new URL(page).origin;
+  } catch {
+    page = PLAYER + "/";
+  }
+
+  return {
+    Referer: page,
+    Origin: origin
+  };
+}
+
+async function playServer(entry, referer) {
+  const headers = playbackHeaders(referer);
+
   if (typeof entry === "string" && /^https?:\/\//i.test(entry)) {
     return {
       url: entry,
       mime: /\.m3u8(\?|$)/i.test(entry)
         ? "application/x-mpegURL"
         : "video/mp4",
-      headers: {
-        Referer: PLAYER + "/"
-      }
+      headers
     };
   }
 
@@ -735,9 +755,7 @@ async function playServer(entry) {
     mime: /\.m3u8(\?|$)/i.test(entry.file)
       ? "application/x-mpegURL"
       : "video/mp4",
-    headers: {
-      Referer: PLAYER + "/"
-    }
+    headers
   };
 
   if (
@@ -759,7 +777,7 @@ async function playServer(entry) {
 function decodeAlternative(ref) {
   const raw = decodeRef(ref);
 
-  // Formato nuevo: objeto con archivo y subtítulo.
+  // Formato nuevo: objeto con archivo, subtítulo y referer.
   if (raw.startsWith("{")) {
     try {
       const parsed = JSON.parse(raw);
@@ -830,7 +848,10 @@ export async function resolve(ref) {
       parts.slice(1).join("~")
     );
 
-    return await playServer(entry);
+    return await playServer(
+      entry,
+      entry && entry.referer ? entry.referer : PLAYER + "/"
+    );
   }
 
   if (parts[0] !== "v" || !parts[1]) {
@@ -903,13 +924,15 @@ export async function resolve(ref) {
 
   log("Servidores encontrados", servers.length);
 
-  const stream = await playServer(servers[0]);
+  // El Referer es la URL exacta del iframe.
+  const stream = await playServer(servers[0], embed);
   const alternatives = [];
 
   for (let i = 1; i < servers.length; i++) {
     const alternativeData = JSON.stringify({
       file: servers[i].file,
-      subtitle: servers[i].subtitle
+      subtitle: servers[i].subtitle,
+      referer: embed
     });
 
     alternatives.push({
