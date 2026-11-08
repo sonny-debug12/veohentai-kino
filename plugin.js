@@ -2,6 +2,7 @@
 const PLAYER = "https://hentaiplayer.com";
 const PLAYER_REF = PLAYER + "/";
 const TIMEOUT = 12000;
+const CHROME_UA = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36";
 const MAX_ITEMS = 60;
 const MAX_EPISODES = 3000;
 const POW_LIMIT = 4000000;
@@ -27,9 +28,10 @@ function sleep(ms) {
   return kino.sleep(ms);
 }
 
-async function getText(url, referer) {
+async function getText(url, referer, useChrome = false) {
   const headers = {};
   if (referer) headers.Referer = referer;
+  if (useChrome) headers["User-Agent"] = CHROME_UA;
 
   const r = await kino.fetch(url, {
     headers,
@@ -716,7 +718,7 @@ async function playerUrl(entry) {
   const referer = PLAYER + (entry.dataId || "/");
   const started = Date.now();
 
-  const page = await getText(PLAYER + entry.dataId, BASE + "/");
+  const page = await getText(PLAYER + entry.dataId, BASE + "/", true);
 
   const coreM = /player-core-v2\.php\?t=([A-Za-z0-9_\-]+)(?:&amp;|&)_=(\d+)/.exec(page);
 
@@ -724,7 +726,8 @@ async function playerUrl(entry) {
 
   const core = await getText(
     PLAYER + "/player-core-v2.php?t=" + coreM[1] + "&_=" + coreM[2],
-    referer
+    referer,
+    true
   );
 
   const cM = /\bc\s*:\s*"([A-Za-z0-9_\-.]+)"/.exec(core);
@@ -763,6 +766,7 @@ async function playerUrl(entry) {
   const r = await kino.fetch(PLAYER + "/get-video-url-v2.php?" + query, {
     headers: {
       Referer: referer,
+      "User-Agent": CHROME_UA,
       Accept: "application/json",
       "X-Requested-With": "XMLHttpRequest"
     },
