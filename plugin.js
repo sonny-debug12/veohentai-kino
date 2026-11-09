@@ -778,6 +778,15 @@ async function playerUrl(entry) {
   let data = null;
   try { data = JSON.parse(text); } catch {}
 
+  log(
+    "respuesta get-video-url",
+    "http=" + r.status,
+    "bytes=" + text.length,
+    "json=" + !!data,
+    "keys=" + (data ? Object.keys(data).join(",") : "ninguno"),
+    "error=" + (data && data.error ? String(data.error).slice(0, 180) : "ninguno")
+  );
+
   if (!r.ok || !data || !data.url) {
     throw new Error((data && data.error) || "reproductor " + r.status);
   }
