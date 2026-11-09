@@ -907,6 +907,7 @@ export async function resolve(ref) {
   }
 
   const embed = parseEmbed(html);
+  log("DEBUG embed", embed);
 
   if (!embed) {
     throw kino.error("not_found", "el episodio no tiene reproductor", {
@@ -1029,3 +1030,4 @@ export async function screenEvent({ name } = {}) {
 
   return null;
 }
+
