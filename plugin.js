@@ -6,6 +6,10 @@ const MAX_ITEMS = 60;
 const MAX_EPISODES = 3000;
 const POW_LIMIT = 4000000;
 
+// Un solo User-Agent para TODO (fetch, streams y webview).
+// Debe ser idéntico al del webview para que cf_clearance siga siendo válida.
+const UA = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36";
+
 function log(...args) {
   try { kino.log(...args); } catch {}
 }
@@ -27,12 +31,17 @@ function sleep(ms) {
   return kino.sleep(ms);
 }
 
-async function getText(url, referer) {
-  const headers = {};
+// Cabeceras comunes. Si Kino te permite obtener las cookies del webview,
+// agrégalas aquí (headers.Cookie = "...") y se usarán en todas las peticiones.
+function baseHeaders(referer) {
+  const headers = { "User-Agent": UA };
   if (referer) headers.Referer = referer;
+  return headers;
+}
 
+async function getText(url, referer) {
   const r = await kino.fetch(url, {
-    headers,
+    headers: baseHeaders(referer),
     timeoutMs: TIMEOUT
   });
 
@@ -594,13 +603,13 @@ function sha256hex(input) {
   return [h0, h1, h2, h3, h4, h5, h6, h7].map(hex8).join("");
 }
 
-// Huella mínima: el servidor solo la registra, no la compara en duro.
+// Huella coherente con el User-Agent (Android móvil), no con Windows.
 const FP = btoa(JSON.stringify({
   t: 2400, i: 1, mc: 0, tc: 0, cc: 0, kc: 0, mm: [], tm: [],
   b: {
-    sw: 1920, sh: 1080, aw: 1920, ah: 1040, cd: 24, tz: 0,
-    hc: 8, dm: 8, pl: "Win32", lang: "es", dpr: 1,
-    ww: 1920, wh: 1080, touch: false
+    sw: 412, sh: 915, aw: 412, ah: 915, cd: 24, tz: 0,
+    hc: 8, dm: 4, pl: "Linux armv8l", lang: "es", dpr: 2.625,
+    ww: 412, wh: 915, touch: true
   }
 }));
 
@@ -711,6 +720,11 @@ function mimeOf(url) {
   return /\.m3u8(\?|$)/i.test(url) ? "application/x-mpegURL" : "video/mp4";
 }
 
+// Cabeceras que se entregan al reproductor de Kino para pedir el video.
+function streamHeaders() {
+  return { Referer: PLAYER_REF, "User-Agent": UA };
+}
+
 // Cadena real del player: /player.php -> player-core-v2.php -> reto -> URL firmada.
 async function playerUrl(entry) {
   const referer = PLAYER + (entry.dataId || "/");
@@ -760,12 +774,12 @@ async function playerUrl(entry) {
     "&fp=" + encodeURIComponent(FP) +
     "&df=wd";
 
+  const headers = baseHeaders(referer);
+  headers.Accept = "application/json";
+  headers["X-Requested-With"] = "XMLHttpRequest";
+
   const r = await kino.fetch(PLAYER + "/get-video-url-v2.php?" + query, {
-    headers: {
-      Referer: referer,
-      Accept: "application/json",
-      "X-Requested-With": "XMLHttpRequest"
-    },
+    headers,
     timeoutMs: TIMEOUT
   });
 
@@ -799,7 +813,7 @@ async function resolveServer(entry) {
       stream: {
         url: entry,
         mime: mimeOf(entry),
-        headers: { Referer: PLAYER_REF }
+        headers: streamHeaders()
       },
       alternatives: []
     };
@@ -832,11 +846,15 @@ async function resolveServer(entry) {
   if (!url) {
     const first = alternatives.shift();
 
+    if (!first) {
+      throw kino.error("unavailable", "el reproductor no entregó archivo");
+    }
+
     return {
       stream: withSubtitle({
         url: first.url,
         mime: mimeOf(first.url),
-        headers: { Referer: PLAYER_REF }
+        headers: streamHeaders()
       }, entry),
       alternatives
     };
@@ -846,7 +864,7 @@ async function resolveServer(entry) {
     stream: withSubtitle({
       url,
       mime: mimeOf(url),
-      headers: { Referer: PLAYER_REF }
+      headers: streamHeaders()
     }, entry),
     alternatives
   };
@@ -1006,7 +1024,7 @@ export async function screenEvent({ name } = {}) {
       await kino.visualBrowser.open({
         url: BASE + "/",
         title: "VeoHentai",
-        userAgent: "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
+        userAgent: UA,
         timeoutMs: 120000
       });
     } catch (error) {
