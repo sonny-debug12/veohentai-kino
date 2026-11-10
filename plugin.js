@@ -761,7 +761,14 @@ async function playerUrl(entry) {
   const wait = 2400 - (Date.now() - started);
   if (wait > 0) await sleep(wait);
 
+  const powStart = Date.now();
   const proof = await solvePow(nonce + stamp);
+
+  log(
+    "reto resuelto",
+    "pow_ms=" + (Date.now() - powStart),
+    "total_ms=" + (Date.now() - started)
+  );
 
   const query =
     "c=" + encodeURIComponent(token) +
@@ -789,6 +796,12 @@ async function playerUrl(entry) {
   try { data = JSON.parse(text); } catch {}
 
   if (!r.ok || !data || !data.url) {
+    // Diagnóstico: qué responde exactamente el servidor al reto.
+    log("get-video-url status", r.status, "cuerpo:", text.slice(0, 300));
+
+    try { log("get-video-url cabeceras", JSON.stringify(r.headers)); }
+    catch {}
+
     throw new Error((data && data.error) || "reproductor " + r.status);
   }
 
