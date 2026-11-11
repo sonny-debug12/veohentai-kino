@@ -1,41 +1,43 @@
 {
-  "id": "veohentai",
+  "id": "veohentai-plugin",
   "name": "VeoHentai",
-  "version": "1.0.1",
-  "apiVersion": 20,
-  "entry": "plugin.js",
-  "icon": "icon.png",
-  "description": "Catálogo de VeoHentai con acceso al reproductor original.",
-  "author": "veni",
-  "homepage": "https://veohentai.com",
-  "categories": ["anime", "adult", "series"],
-  "capabilities": [
-    "search",
-    "home",
-    "episodes",
-    "resolve",
-    "screen"
-  ],
-  "screen": {
-    "label": "VeoHentai",
-    "icon": "play",
-    "opensFrom": ["menu"]
+  "version": "1.0.0",
+  "description": {
+    "es": "Plugin para reproducir contenido de VeoHentai con resolución automática de reproductor y PoW.",
+    "en": "Plugin to play VeoHentai content with automatic player resolution and PoW."
   },
-  "visualBrowser": true,
-  "hosts": [
-    "veohentai.com",
-    "www.veohentai.com",
-    "hentaiplayer.com",
-    "r2.1hanime.com",
-    "cdn.htstreaming.com"
+  "author": "IA Sin Censura",
+  "logo": "https://veohentai.com/assets/img/logo.png",
+  "poster": "https://veohentai.com/assets/img/poster.jpg",
+  "background": "https://veohentai.com/assets/img/banner.jpg",
+  "types": [
+    "anime"
   ],
-  "fetchHosts": "any",
-  "streamHosts": "any",
-  "theme": {
-    "accent": "#FF3D71",
-    "onAccent": "#2A0713",
-    "background": "#140A10",
-    "surface": "#22121B",
-    "highlight": "#FFC2D4"
+  "languages": [
+    "es-CO",
+    "es-ES",
+    "es-MX",
+    "es"
+  ],
+  "groups": [
+    "adult",
+    "streaming"
+  ],
+  "main": "plugin.js",
+  "resources": [
+    "plugin.js"
+  ],
+  "screenshots": [],
+  "styles": {
+    "primaryColor": "#e50914",
+    "darkMode": true,
+    "headerStyle": "transparent"
+  },
+  "config": {
+    "baseUrl": "https://veohentai.com",
+    "playerUrl": "https://hentaiplayer.com",
+    "maxItems": 60,
+    "maxEpisodes": 3000,
+    "timeoutMs": 12000
   }
 }
