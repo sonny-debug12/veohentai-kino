@@ -3,8 +3,8 @@
   "name": "VeoHentai",
   "version": "1.0.0",
   "description": {
-    "es": "Plugin para reproducir contenido de VeoHentai con resolución automática de reproductor y PoW.",
-    "en": "Plugin to play VeoHentai content with automatic player resolution and PoW."
+    "es": "Reproductor de anime y hentai con resolución automática de reproductor y Proof-of-Work.",
+    "en": "Anime and hentai player with automatic player resolution and Proof-of-Work."
   },
   "author": "IA Sin Censura",
   "logo": "https://veohentai.com/assets/img/logo.png",
