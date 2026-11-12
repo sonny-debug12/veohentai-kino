@@ -1,13 +1,8 @@
-﻿const BASE = "https://veohentai.com";
+const BASE = "https://veohentai.com";
 const PLAYER = "https://hentaiplayer.com";
-const PLAYER_REF = PLAYER + "/";
 const TIMEOUT = 12000;
 const MAX_ITEMS = 60;
 const MAX_EPISODES = 3000;
-const POW_LIMIT = 4000000;
-
-// User-Agent consistente
-const UA = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36";
 
 function log(...args) {
   try { kino.log(...args); } catch {}
@@ -26,75 +21,16 @@ function hostOf(url) {
   catch { return ""; }
 }
 
-function sleep(ms) {
-  return kino.sleep(ms);
-}
-
-// --- GESTIÓN DE COOKIES ---
-
-// Variable en memoria para cachear las cookies y no pedirle al WebView constantemente
-let _cachedCookies = null;
-let _cookieTimestamp = 0;
-
-async function refreshCookies() {
-  try {
-    // Obtenemos cookies del dominio base
-    const cookies = await kino.visualBrowser.getCookies(BASE);
-    if (cookies && cookies.length > 0) {
-      _cachedCookies = cookies.map(c => `${c.name}=${c.value}`).join("; ");
-      _cookieTimestamp = Date.now();
-      log("Cookies actualizadas:", _cachedCookies.substring(0, 50) + "...");
-    } else {
-      log("Advertencia: No se encontraron cookies en el WebView.");
-      _cachedCookies = "";
-    }
-  } catch (e) {
-    log("Error al obtener cookies:", e.message);
-    _cachedCookies = "";
-  }
-}
-
-async function getHeaders(referer, isApiRequest = false) {
-  // Refrescar cookies si han pasado más de 5 minutos o si no tenemos
-  if (!_cachedCookies || (Date.now() - _cookieTimestamp > 300000)) {
-    await refreshCookies();
-  }
-
-  const headers = {
-    "User-Agent": UA,
-    "Referer": referer || BASE + "/"
-  };
-
-  // Inyectar cookies si existen
-  if (_cachedCookies) {
-    headers["Cookie"] = _cachedCookies;
-  }
-
-  // Si es una petición API (como get-video-url), añadir Origin y Accept específicos
-  if (isApiRequest) {
-    headers["Origin"] = PLAYER;
-    headers["Accept"] = "application/json";
-    headers["X-Requested-With"] = "XMLHttpRequest";
-  }
-
-  return headers;
-}
-
 async function getText(url, referer) {
-  const headers = await getHeaders(referer, false);
-  
+  const headers = {};
+  if (referer) headers.Referer = referer;
+
   const r = await kino.fetch(url, {
     headers,
     timeoutMs: TIMEOUT
   });
 
-  if (!r.ok) {
-    // Diagnóstico rápido si falla la carga inicial
-    if (r.status === 403) {
-       log("Error 403 en getText. Posible falta de cf_clearance. Intenta abrir el navegador.");
-    }
-    throw new Error(url + " respondió " + r.status);
-  }
+  if (!r.ok) throw new Error(url + " respondiÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³ " + r.status);
   return r.text();
 }
 
@@ -183,6 +119,7 @@ function srcsetUrl(value) {
   return candidates.length ? candidates[candidates.length - 1] : "";
 }
 
+// Extrae imÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡genes evitando logos, iconos y placeholders.
 function extractImage(block, pageUrl) {
   if (!block) return undefined;
 
@@ -296,13 +233,17 @@ function parseCards(html, pageUrl) {
 
 function splitEpisode(slug) {
   const m = /^(.*)-episodio-(\d+)$/i.exec(slug);
-  return m ? { slug: m[1], num: Number(m[2]) } : null;
+
+  return m
+    ? { slug: m[1], num: Number(m[2]) }
+    : null;
 }
 
 function seriesTitle(title, slug) {
   const cleaned = clean(title, 200)
-    .replace(/\s*[-–|:]?\s*episodio\s*\d+\s*$/i, "")
+    .replace(/\s*[-ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ|:]?\s*episodio\s*\d+\s*$/i, "")
     .trim();
+
   return cleaned || slug.replace(/-/g, " ");
 }
 
@@ -328,16 +269,19 @@ function episodeItem(c) {
   };
 }
 
+// Agrupa capÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­tulos de una misma serie.
 function catalogItems(cards) {
   const result = [];
   const seriesMap = new Map();
 
   for (const c of cards) {
     const ep = splitEpisode(c.slug);
+
     if (!ep) {
       result.push(episodeItem(c));
       continue;
     }
+
     if (seriesMap.has(ep.slug)) continue;
 
     const grouped = {
@@ -345,27 +289,37 @@ function catalogItems(cards) {
       title: seriesTitle(c.title, ep.slug),
       poster: c.poster
     };
+
     const item = seriesItem(grouped);
     seriesMap.set(ep.slug, item);
     result.push(item);
   }
+
   return result;
 }
 
-// ---- búsqueda --------------------------------------------------------------
+// ---- bÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âºsqueda --------------------------------------------------------------
 
 export async function search(query) {
   await null;
+
   const terms = [];
   const seenTerm = new Set();
 
-  for (const raw of [query && query.q, query && query.originalTitle]) {
+  for (const raw of [
+    query && query.q,
+    query && query.originalTitle
+  ]) {
     if (typeof raw !== "string" || !raw.trim()) continue;
+
     const text = kino.rank.shortQuery(raw).trim();
     const key = text.toLowerCase();
+
     if (!text || seenTerm.has(key)) continue;
+
     seenTerm.add(key);
     terms.push(text);
+
     if (terms.length === 2) break;
   }
 
@@ -374,22 +328,27 @@ export async function search(query) {
   const answers = await Promise.all(
     terms.map(async term => {
       try {
-        return await getText(abs("/buscar?q=" + encodeURIComponent(term)), BASE + "/");
+        return await getText(
+          abs("/buscar?q=" + encodeURIComponent(term)),
+          BASE + "/"
+        );
       } catch (e) {
-        log("búsqueda falló", term, e.message);
+        log("bÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âºsqueda fallÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³", term, e.message);
         return null;
       }
     })
   );
 
   if (answers.every(a => a === null)) {
-    throw kino.error("unavailable", "el sitio no respondió");
+    throw kino.error("unavailable", "el sitio no respondiÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³");
   }
 
   const found = [];
   const seen = new Set();
+
   for (const html of answers) {
     if (!html) continue;
+
     for (const c of parseCards(html, BASE + "/")) {
       if (seen.has(c.slug)) continue;
       seen.add(c.slug);
@@ -399,6 +358,7 @@ export async function search(query) {
 
   const relevant = kino.rank.filterRelevant(found, terms, c => c.title);
   const kept = relevant.length ? relevant : found;
+
   const sorted = kino.rank.sortBySimilarity(kept, terms, c => c.title);
 
   return catalogItems(sorted).slice(0, MAX_ITEMS);
@@ -409,30 +369,66 @@ export async function search(query) {
 export async function home() {
   await null;
 
-  // Forzamos refrescar cookies al entrar a home para asegurar máxima compatibilidad
-  await refreshCookies();
-
   const [front, top, seen, uncensored] = await Promise.all([
-    getText(BASE + "/", BASE + "/").catch(e => { log("Inicio falló (Front)", e.message); return null; }),
-    getText(abs("/explorar/?orden=vistas-semana"), BASE + "/").catch(e => { log("Inicio falló (Top)", e.message); return null; }),
-    getText(abs("/explorar/?orden=vistas"), BASE + "/").catch(e => { log("Inicio falló (Seen)", e.message); return null; }),
-    getText(abs("/genero/hentai-sin-censura/"), BASE + "/").catch(e => { log("Inicio falló (Uncensored)", e.message); return null; })
+    getText(BASE + "/", BASE + "/").catch(e => {
+      log("Inicio fallÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³", e.message);
+      return null;
+    }),
+
+    getText(abs("/explorar/?orden=vistas-semana"), BASE + "/").catch(() => null),
+
+    getText(abs("/explorar/?orden=vistas"), BASE + "/").catch(() => null),
+
+    getText(abs("/genero/hentai-sin-censura/"), BASE + "/").catch(() => null)
   ]);
 
   const rows = [];
+
   const push = (id, title, items) => {
     if (items.length) {
-      rows.push({ id, title, genre: "anime", items: items.slice(0, MAX_ITEMS) });
+      rows.push({
+        id,
+        title,
+        genre: "anime",
+        items: items.slice(0, MAX_ITEMS)
+      });
     }
   };
 
-  if (front) push("recientes", msg("Recién agregados", "Recently added"), catalogItems(parseCards(front, BASE + "/")));
-  if (top) push("tendencias", msg("Tendencias de la semana", "Trending this week"), catalogItems(parseCards(top, BASE + "/")));
-  if (seen) push("vistos", msg("Los más vistos", "Most watched"), catalogItems(parseCards(seen, BASE + "/")));
-  if (uncensored) push("sin-censura", msg("Sin censura", "Uncensored"), catalogItems(parseCards(uncensored, BASE + "/")));
+  if (front) {
+    push(
+      "recientes",
+      msg("ReciÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©n agregados", "Recently added"),
+      catalogItems(parseCards(front, BASE + "/"))
+    );
+  }
+
+  if (top) {
+    push(
+      "tendencias",
+      msg("Tendencias de la semana", "Trending this week"),
+      catalogItems(parseCards(top, BASE + "/"))
+    );
+  }
+
+  if (seen) {
+    push(
+      "vistos",
+      msg("Los mÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡s vistos", "Most watched"),
+      catalogItems(parseCards(seen, BASE + "/"))
+    );
+  }
+
+  if (uncensored) {
+    push(
+      "sin-censura",
+      msg("Sin censura", "Uncensored"),
+      catalogItems(parseCards(uncensored, BASE + "/"))
+    );
+  }
 
   if (!rows.length) {
-    throw kino.error("unavailable", "No se pudo cargar el catálogo. Verifica tu conexión o abre el navegador integrado.");
+    throw kino.error("unavailable", "el sitio no devolviÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³ nada");
   }
 
   return rows;
@@ -442,20 +438,30 @@ export async function home() {
 
 export async function episodes(ref) {
   await null;
+
   const parts = String(ref || "").split("~");
   const slug = parts[1] || "";
 
-  if (parts[0] !== "s" || !slug) throw kino.error("not_found", "esa serie ya no existe");
+  if (parts[0] !== "s" || !slug) {
+    throw kino.error("not_found", "esa serie ya no existe");
+  }
 
   const seriesUrl = abs("/serie/" + slug + "/");
+
   let html;
+
   try {
     html = await getText(seriesUrl, BASE + "/");
   } catch (e) {
-    throw kino.error("not_found", "no se pudo abrir la serie: " + e.message);
+    throw kino.error(
+      "not_found",
+      "no se pudo abrir la serie: " + e.message
+    );
   }
 
   const titleM = /<h1\b[^>]*>([\s\S]*?)<\/h1>/i.exec(html);
+
+  // Prioriza la portada del contenido principal, no el logo.
   const seriesPoster = extractImage(html, seriesUrl);
 
   const list = [];
@@ -463,23 +469,36 @@ export async function episodes(ref) {
 
   for (const c of parseCards(html, seriesUrl)) {
     const ep = splitEpisode(c.slug);
+
     if (!ep || ep.slug !== slug || seen.has(c.slug)) continue;
+
     seen.add(c.slug);
+
     list.push({
       season: 1,
       number: ep.num,
       ref: "v~" + ep.slug + "~" + ep.num,
-      title: c.title || msg("Episodio " + ep.num, "Episode " + ep.num)
+      title: c.title || msg(
+        "Episodio " + ep.num,
+        "Episode " + ep.num
+      )
     });
+
     if (list.length >= MAX_EPISODES) break;
   }
 
-  if (!list.length) throw kino.error("not_found", "esa serie no tiene episodios");
+  if (!list.length) {
+    throw kino.error("not_found", "esa serie no tiene episodios");
+  }
+
   list.sort((a, b) => a.number - b.number);
 
   return {
     series: {
-      title: clean(titleM ? titleM[1] : slug.replace(/-/g, " "), 200),
+      title: clean(
+        titleM ? titleM[1] : slug.replace(/-/g, " "),
+        200
+      ),
       poster: seriesPoster,
       genres: ["anime"]
     },
@@ -487,317 +506,485 @@ export async function episodes(ref) {
   };
 }
 
-// ---- reproductor ------------------------------------------------------------
+// ---- reproductores multi: Hentaila.com + Hentaila.tv + VOE -----------------
 
-const SHA_K = [
-  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1,
-  0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3,
-  0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786,
-  0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
-  0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147,
-  0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13,
-  0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b,
-  0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
-  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a,
-  0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208,
-  0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
-];
+const HENTAILA_COM = "https://hentaila.com";
+const HENTAILA_TV = "https://hentaila.tv";
+const HENTAILA_TV_API =
+  "https://hentaila.tv/wp-content/plugins/player-logic/api.php";
 
-function rotr(x, n) { return (x >>> n) | (x << (32 - n)); }
-function hex8(value) { let s = (value >>> 0).toString(16); while (s.length < 8) s = "0" + s; return s; }
-
-function sha256hex(input) {
-  const m = [];
-  for (let i = 0; i < input.length; i++) m.push(input.charCodeAt(i) & 0xff);
-  const bits = m.length * 8;
-  m.push(0x80);
-  while (m.length % 64 !== 56) m.push(0);
-  const hi = Math.floor(bits / 4294967296);
-  const lo = bits >>> 0;
-  m.push((hi >>> 24) & 0xff, (hi >>> 16) & 0xff, (hi >>> 8) & 0xff, hi & 0xff);
-  m.push((lo >>> 24) & 0xff, (lo >>> 16) & 0xff, (lo >>> 8) & 0xff, lo & 0xff);
-
-  let h0 = 0x6a09e667, h1 = 0xbb67ae85, h2 = 0x3c6ef372, h3 = 0xa54ff53a;
-  let h4 = 0x510e527f, h5 = 0x9b05688c, h6 = 0x1f83d9ab, h7 = 0x5be0cd19;
-  const w = new Array(64);
-
-  for (let off = 0; off < m.length; off += 64) {
-    for (let i = 0; i < 16; i++) {
-      w[i] = (m[off + 4 * i] << 24) | (m[off + 4 * i + 1] << 16) | (m[off + 4 * i + 2] << 8) | m[off + 4 * i + 3];
-    }
-    for (let i = 16; i < 64; i++) {
-      const s0 = rotr(w[i - 15], 7) ^ rotr(w[i - 15], 18) ^ (w[i - 15] >>> 3);
-      const s1 = rotr(w[i - 2], 17) ^ rotr(w[i - 2], 19) ^ (w[i - 2] >>> 10);
-      w[i] = (w[i - 16] + s0 + w[i - 7] + s1) | 0;
-    }
-    let a = h0, b = h1, c = h2, d = h3, e = h4, f = h5, g = h6, h = h7;
-    for (let i = 0; i < 64; i++) {
-      const s1 = rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25);
-      const pick = (e & f) ^ (~e & g);
-      const t1 = (h + s1 + pick + SHA_K[i] + w[i]) | 0;
-      const s0 = rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22);
-      const maj = (a & b) ^ (a & c) ^ (b & c);
-      const t2 = (s0 + maj) | 0;
-      h = g; g = f; f = e; e = (d + t1) | 0;
-      d = c; c = b; b = a; a = (t1 + t2) | 0;
-    }
-    h0 = (h0 + a) | 0; h1 = (h1 + b) | 0; h2 = (h2 + c) | 0; h3 = (h3 + d) | 0;
-    h4 = (h4 + e) | 0; h5 = (h5 + f) | 0; h6 = (h6 + g) | 0; h7 = (h7 + h) | 0;
-  }
-  return [h0, h1, h2, h3, h4, h5, h6, h7].map(hex8).join("");
+function rot13(text) {
+  return String(text).replace(/[a-zA-Z]/g, ch => {
+    const c = ch.charCodeAt(0);
+    const base = c <= 90 ? 65 : 97;
+    return String.fromCharCode(((c - base + 13) % 26) + base);
+  });
 }
 
-const FP = btoa(JSON.stringify({
-  t: 2400, i: 1, mc: 0, tc: 0, cc: 0, kc: 0, mm: [], tm: [],
-  b: { sw: 412, sh: 915, aw: 412, ah: 915, cd: 24, tz: 0, hc: 8, dm: 4, pl: "Linux armv8l", lang: "es", dpr: 2.625, ww: 412, wh: 915, touch: true }
-}));
-
-async function solvePow(challenge) {
-  for (let i = 0; i < POW_LIMIT; i++) {
-    if (sha256hex(challenge + i.toString(16)).slice(0, 4) === "0000") return i.toString(16);
-    if ((i & 2047) === 0) await sleep(0);
-  }
-  throw new Error("reto agotado");
+function mimeOf(url) {
+  return /\.m3u8(\?|$)/i.test(url)
+    ? "application/x-mpegURL"
+    : "video/mp4";
 }
 
-function parseEmbed(html) {
-  const meta = /"embedUrl"\s*:\s*"([^"]+)"/i.exec(html);
-  if (meta && hostOf(meta[1]).indexOf("hentaiplayer.com") !== -1) return meta[1].replace(/\\\//g, "/");
+function episodePath(slug, num) {
+  const n = Number(num) || 1;
+  const episodeSlug = /-episodio-\d+$/i.test(slug)
+    ? slug
+    : slug + "-episodio-" + n;
 
-  const re = /<(?:iframe|div)\b[^>]*\b(?:src|data-src)\s*=\s*(["'])([^"']+)\1/gi;
-  let m;
-  while ((m = re.exec(html))) {
-    const src = imageUrl(m[2], BASE + "/");
-    if (src && hostOf(src).indexOf("hentaiplayer.com") !== -1) return src;
-  }
-  const loose = /https?:\/\/hentaiplayer\.com\/v\/[A-Za-z0-9_-]+\/?/.exec(html);
-  return loose ? loose[0] : "";
+  return "/ver/" + episodeSlug + "/";
 }
 
-function parseServers(page) {
-  const out = [];
-  const re = /<li\b[^>]*\bdata-id\s*=\s*(["'])([\s\S]*?)\1/gi;
-  let m;
-  while ((m = re.exec(page))) {
-    const dataId = m[2].replace(/&amp;/gi, "&");
-    const vidM = /[?&]vid=([^&"'\s]+)/.exec(dataId);
-    if (!vidM) continue;
-    let raw;
-    try { raw = b64(decodeURIComponent(vidM[1])); } catch { continue; }
-    
-    const bits = raw.split("|");
-    const file = bits[0];
-    if (!/^https?:\/\//i.test(file)) continue;
+async function sourceEpisodeHtml(base, slug, num) {
+  const path = episodePath(slug, num);
 
-    let subtitle;
-    const sM = /[?&]s=([^&"'\s]+)/.exec(dataId);
-    if (sM) { try { subtitle = b64(decodeURIComponent(sM[1])); } catch {} }
-    if (subtitle && !/^https?:\/\//i.test(subtitle)) subtitle = undefined;
-
-    out.push({ file, exp: bits[1] || "", hash: bits[2] || "", subtitle, dataId });
-  }
-  return out;
-}
-
-async function episodeHtml(slug, num) {
-  const number = Number(num) || 1;
-  const episodeSlug = /-episodio-\d+$/i.test(slug) ? slug : slug + "-episodio-" + number;
   try {
-    return await getText(abs("/ver/" + episodeSlug + "/"), BASE + "/");
+    return await getText(base + path, base + "/");
   } catch (e) {
-    if (number === 1) {
-      try { return await getText(abs("/ver/" + slug + "/"), BASE + "/"); } catch {}
+    if ((Number(num) || 1) === 1) {
+      return await getText(base + "/ver/" + slug + "/", base + "/");
     }
     throw e;
   }
 }
 
-function mimeOf(url) {
-  return /\.m3u8(\?|$)/i.test(url) ? "application/x-mpegURL" : "video/mp4";
-}
+// Busca el reproductor incrustado en la pÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡gina del episodio.
+function parsePlayerEmbed(html, pageUrl) {
+  const re = /<(?:iframe|embed)\b[^>]*>/gi;
+  let m;
 
-function streamHeaders() {
-  return { Referer: PLAYER_REF, "User-Agent": UA };
-}
+  while ((m = re.exec(html))) {
+    const tag = m[0];
+    const src = imageUrl(
+      attr(tag, "src") || attr(tag, "data-src"),
+      pageUrl
+    );
 
-async function playerUrl(entry) {
-  const referer = PLAYER + (entry.dataId || "/");
-  const started = Date.now();
+    if (!src) continue;
 
-  // 1. Obtener página inicial del player
-  const page = await getText(PLAYER + entry.dataId, BASE + "/");
-  const coreM = /player-core-v2\.php\?t=([A-Za-z0-9_\-]+)(?:&amp;|&)_=(\d+)/.exec(page);
-  if (!coreM) throw new Error("el reproductor no entregó token");
+    const host = hostOf(src);
 
-  // 2. Obtener core del player
-  const core = await getText(PLAYER + "/player-core-v2.php?t=" + coreM[1] + "&_=" + coreM[2], referer);
-  const cM = /\bc\s*:\s*"([A-Za-z0-9_\-.]+)"/.exec(core);
-  const tM = /\bt\s*:\s*'(\d+)'/.exec(core);
-  if (!cM || !tM) throw new Error("el reproductor no entregó el reto");
-
-  const token = cM[1];
-  const stamp = tM[1];
-  let nonce = "";
-  try { nonce = String(JSON.parse(b64(token.split(".")[0])).n || ""); } catch {}
-  if (!/^[0-9a-f]{32}$/i.test(nonce)) throw new Error("reto ilegible");
-
-  // 3. Esperar tiempo mínimo
-  const wait = 2400 - (Date.now() - started);
-  if (wait > 0) await sleep(wait);
-
-  // 4. Resolver PoW
-  const powStart = Date.now();
-  const proof = await solvePow(nonce + stamp);
-  log("reto resuelto", "pow_ms=" + (Date.now() - powStart), "total_ms=" + (Date.now() - started));
-
-  const query =
-    "c=" + encodeURIComponent(token) +
-    "&p1=" + nonce.slice(0, 8) +
-    "&p2=" + nonce.slice(8, 16) +
-    "&p3=" + nonce.slice(16, 24) +
-    "&p4=" + nonce.slice(24, 32) +
-    "&t=" + stamp +
-    "&pow=" + proof +
-    "&fp=" + encodeURIComponent(FP) +
-    "&df=wd";
-
-  // 5. Petición final CON ORIGEN Y COOKIES
-  const headers = await getHeaders(referer, true); // true = isApiRequest
-  
-  const r = await kino.fetch(PLAYER + "/get-video-url-v2.php?" + query, {
-    headers,
-    timeoutMs: TIMEOUT
-  });
-
-  const text = await r.text();
-  let data = null;
-  try { data = JSON.parse(text); } catch {}
-
-  if (!r.ok || !data || !data.url) {
-    log("get-video-url status", r.status, "cuerpo:", text.slice(0, 300));
-    if (r.status === 403) {
-        log("ERROR CRÍTICO: 403. Es probable que las cookies hayan caducado o sean inválidas.");
-        log("Sugerencia: Abre el navegador integrado desde la pantalla de inicio para renovarlas.");
+    if (
+      host.includes("hentaiplayer.com") ||
+      host.includes("hentaila.com") ||
+      host.includes("hentaila.tv") ||
+      host.includes("voe.sx") ||
+      /player\.php/i.test(src)
+    ) {
+      return src;
     }
-    throw new Error((data && data.error) || "reproductor " + r.status);
   }
 
-  if (!/^https?:\/\//i.test(data.url)) throw new Error("url inválida");
-  return data.url;
+  const patterns = [
+    /https?:\/\/(?:www\.)?hentaiplayer\.com\/v\/[A-Za-z0-9_-]+\/?/i,
+    /https?:\/\/(?:www\.)?voe\.sx\/e\/[A-Za-z0-9]+/i,
+    /https?:\/\/(?:www\.)?hentaila\.tv\/[^"'\\\s]*player\.php[^"'\\\s]*/i
+  ];
+
+  for (const pattern of patterns) {
+    const found = pattern.exec(html);
+    if (found) return found[0].replace(/&amp;/g, "&");
+  }
+
+  return "";
+}
+
+// Convierte el data-id del reproductor en un servidor.
+function parseServerDataId(dataId) {
+  const value = String(dataId || "").replace(/&amp;/gi, "&");
+  const vidM = /[?&]vid=([^&"'\s]+)/.exec(value);
+
+  if (!vidM) throw new Error("data-id sin video");
+
+  let decoded;
+
+  try {
+    decoded = b64(decodeURIComponent(vidM[1]));
+  } catch {
+    throw new Error("data-id invÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡lido");
+  }
+
+  const parts = decoded.split("|");
+  const file = parts[0];
+
+  if (!/^https?:\/\//i.test(file)) {
+    throw new Error("URL de video invÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡lida");
+  }
+
+  let subtitle;
+  const subM = /[?&]s=([^&"'\s]+)/.exec(value);
+
+  if (subM) {
+    try {
+      subtitle = b64(decodeURIComponent(subM[1]));
+    } catch {}
+  }
+
+  if (subtitle && !/^https?:\/\//i.test(subtitle)) {
+    subtitle = undefined;
+  }
+
+  return {
+    file,
+    subtitle,
+    dataId: value
+  };
+}
+
+function parseServers(page) {
+  const servers = [];
+  const re = /<li\b[^>]*\bdata-id\s*=\s*(["'])([\s\S]*?)\1/gi;
+  let m;
+
+  while ((m = re.exec(page))) {
+    try {
+      servers.push(parseServerDataId(m[2]));
+    } catch (e) {
+      log("Servidor ignorado", e.message);
+    }
+  }
+
+  return servers;
+}
+
+// ---- VOE --------------------------------------------------------------------
+
+async function fromVoe(url) {
+  const idM = /\/e\/([a-z0-9]+)/i.exec(url);
+
+  if (!idM) throw new Error("ID de VOE invÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡lido");
+
+  const pageUrl = "https://susanexpectcare.com/e/" + idM[1];
+  const html = await getText(pageUrl, "https://susanexpectcare.com/");
+
+  const blobM =
+    /<script type="application\/json">\s*(\[[\s\S]*?\])\s*<\/script>/i.exec(html);
+
+  if (!blobM) throw new Error("VOE no entregÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³ datos");
+
+  const list = JSON.parse(blobM[1]);
+  const encoded = Array.isArray(list) ? list[0] : null;
+
+  if (typeof encoded !== "string") {
+    throw new Error("Datos VOE invÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡lidos");
+  }
+
+  const clean1 = rot13(encoded).replace(
+    /@\$|#&|!!|%\?|\^\^|~@|\*~/g,
+    ""
+  );
+
+  let step1; try { step1 = atob(clean1); } catch (e) { throw new Error("VOE: falla Base64 inicial; longitud " + clean1.length); }
+  let shifted = "";
+
+  for (let i = 0; i < step1.length; i++) {
+    shifted += String.fromCharCode(step1.charCodeAt(i) - 3);
+  }
+
+  const reversed = shifted.split("").reverse().join("");
+  let decoded; try { decoded = atob(reversed.replace(/^=+/, "")); } catch (e) { throw new Error("VOE: falla Base64 final; longitud " + reversed.length); }
+  const json = JSON.parse(decoded);
+  const file = json.source || json.direct_access_url;
+
+  if (!file || !/^https?:\/\//i.test(file)) {
+    throw new Error("VOE no entregÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³ el archivo");
+  }
+
+  return {
+    url: file,
+    mime: mimeOf(file),
+    headers: { Referer: pageUrl }
+  };
 }
 
 function withSubtitle(stream, entry) {
   if (entry && entry.subtitle) {
-    stream.subtitles = [{ url: entry.subtitle, label: "Español", lang: "es" }];
+    stream.subtitles = [{
+      url: entry.subtitle,
+      label: "EspaÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â±ol",
+      lang: "es"
+    }];
   }
+
   return stream;
 }
 
-async function resolveServer(entry) {
-  if (typeof entry === "string" && /^https?:\/\//i.test(entry)) {
-    return { stream: { url: entry, mime: mimeOf(entry), headers: streamHeaders() }, alternatives: [] };
-  }
-
-  const alternatives = [];
-  let url = "";
-  try { url = await playerUrl(entry); } catch (e) { log("cadena del reproductor falló", e.message); }
-
-  if (!url && entry.file) {
-    if (entry.exp && entry.hash) {
-      alternatives.push({ label: msg("Firma directa", "Direct signature"), url: entry.file + "?e=" + entry.exp + "&h=" + entry.hash });
+async function playServer(entry, referer) {
+  if (typeof entry === "string") {
+    if (/voe\.sx\/e\//i.test(entry)) {
+      return await fromVoe(entry);
     }
-    alternatives.push({ label: msg("Archivo directo", "Direct file"), url: entry.file });
+
+    return {
+      url: entry,
+      mime: mimeOf(entry),
+      headers: { Referer: referer || HENTAILA_COM + "/" }
+    };
   }
 
-  if (!url) {
-    const first = alternatives.shift();
-    if (!first) throw kino.error("unavailable", "el reproductor no entregó archivo");
-    return { stream: withSubtitle({ url: first.url, mime: mimeOf(first.url), headers: streamHeaders() }, entry), alternatives };
+  if (!entry || !entry.file) {
+    throw new Error("Servidor sin archivo");
   }
 
-  return { stream: withSubtitle({ url, mime: mimeOf(url), headers: streamHeaders() }, entry), alternatives };
+  if (/voe\.sx\/e\//i.test(entry.file)) {
+    return withSubtitle(await fromVoe(entry.file), entry);
+  }
+
+  return withSubtitle({
+    url: entry.file,
+    mime: mimeOf(entry.file),
+    headers: { Referer: referer || HENTAILA_COM + "/" }
+  }, entry);
 }
 
-export async function resolve(ref) {
-  await null;
-  const parts = String(ref || "").split("~");
+// ---- Hentaila.com -----------------------------------------------------------
 
-  if (parts[0] === "p") {
-    let dataId;
-    try { dataId = decodeRef(parts.slice(1).join("~")); } catch { throw kino.error("not_found", "ese servidor ya no sirve"); }
-    const result = await resolveServer({ dataId });
-    return { ...result.stream, label: msg("Reproducir", "Play"), alternatives: result.alternatives };
+async function resolveHentailaCom(slug, num) {
+  const cleanSlug = String(slug).replace(/^\/+|\/+$/g, "");
+  const pageUrl =
+    HENTAILA_COM + "/media/" + cleanSlug + "/" + (Number(num) || 1);
+
+  const html = await getText(pageUrl, HENTAILA_COM + "/");
+  const servers = [];
+  const re = /server\s*:\s*"([^"]+)"\s*,\s*url\s*:\s*"([^"]+)"/gi;
+  let match;
+
+  while ((match = re.exec(html))) {
+    servers.push({
+      server: match[1],
+      url: match[2].replace(/&amp;/g, "&")
+    });
   }
 
-  if (parts[0] !== "v" || !parts[1]) throw kino.error("not_found", "esa dirección no es un episodio");
-
-  const slug = parts[1];
-  const num = Number(parts[2]) || 1;
-  let html;
-  try { html = await episodeHtml(slug, num); } catch (e) { throw kino.error("not_found", "no se pudo abrir el episodio: " + e.message); }
-
-  const embed = parseEmbed(html);
-  if (!embed) throw kino.error("not_found", "el episodio no tiene reproductor", { userMessage: msg("Este episodio no tiene reproductor disponible.", "This episode has no available player.") });
-
-  let page;
-  try { page = await getText(embed, BASE + "/"); } catch (e) { throw kino.error("unavailable", "el reproductor no respondió: " + e.message); }
-
-  const servers = parseServers(page);
   if (!servers.length) {
-    const loose = /(https?:\/\/[^"'\s]+?\.mp4[^"'\s]*)/i.exec(page);
-    if (loose) servers.push({ file: loose[1], dataId: loose[1] });
+    throw new Error("Hentaila.com no entregÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³ servidores");
   }
 
-  if (!servers.length) throw kino.error("unavailable", "el reproductor no entregó archivo", { userMessage: msg("El reproductor no entregó ningún video.", "The player returned no video.") });
+  const voe = servers.find(server =>
+    /voe/i.test(server.server) || /voe\.sx\/e\//i.test(server.url)
+  );
 
-  const primary = await resolveServer(servers[0]);
-  const alternatives = primary.alternatives.slice();
-  for (let i = 1; i < servers.length; i++) {
-    alternatives.push({ label: msg("Alternativa " + (i + 1), "Alternative " + (i + 1)), ref: "p~" + encodeRef(servers[i].dataId) });
+  if (!voe) {
+    throw new Error("Hentaila.com no entregÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³ servidor Voe");
   }
 
-  return { ...primary.stream, label: msg("Reproducir", "Play"), alternatives };
+  log("Hentaila.com: usando servidor Voe");
+  return await fromVoe(voe.url);
+}
+// ---- Hentaila.tv ------------------------------------------------------------
+
+function decodeTvConfig(html) {
+  const re = /<meta\b[^>]*>/gi;
+  let m;
+  let token = "";
+
+  while ((m = re.exec(html))) {
+    const tag = m[0];
+    const name = (
+      attr(tag, "name") || attr(tag, "property")
+    ).toLowerCase();
+
+    if (name === "x-secure-token") {
+      token = attr(tag, "content");
+      break;
+    }
+  }
+
+  if (!token) {
+    throw new Error("No se encontrÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³ x-secure-token");
+  }
+
+  let decoded = token.replace(/^sha512-/i, "").trim();
+
+  for (let i = 0; i < 3; i++) {
+    decoded = atob(rot13(decoded));
+  }
+
+  const config = JSON.parse(decoded);
+
+  if (!config.uri || !config.en || !config.iv) {
+    throw new Error("ConfiguraciÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³n incompleta de Hentaila.tv");
+  }
+
+  return config;
 }
 
-export async function screen({ state = {}, route = {} } = {}) {
-  return {
-    type: "Scaffold",
-    appBar: {
-      type: "AppBar", title: "VeoHentai", titleEn: "VeoHentai", mergeWithKinoBar: true, dense: true,
-      leading: { type: "IconButton", icon: "close", labelText: "Cerrar", labelTextEn: "Close", onPressed: { close: true } }
+function parseTvPlayer(html, pageUrl) {
+  const re = /<iframe\b[^>]*>/gi;
+  let m;
+
+  while ((m = re.exec(html))) {
+    const src = imageUrl(attr(m[0], "src"), pageUrl);
+
+    if (src && /player\.php/i.test(src)) {
+      return src;
+    }
+  }
+
+  const loose =
+    /https?:\/\/[^"'\\\s]+\/player\.php\?data=[^"'\\\s]+/i.exec(html);
+
+  return loose ? loose[0].replace(/&amp;/g, "&") : "";
+}
+
+async function resolveHentailaTv(slug, num) {
+  const pageUrl = HENTAILA_TV + "/ver/" + slug.replace(/\/+$/, "") + "/episodio-" + (Number(num) || 1) + "/";
+  const html = await getText(pageUrl, HENTAILA_TV + "/");
+  const playerUrl = parseTvPlayer(html, pageUrl);
+
+  if (!playerUrl) {
+    throw new Error("Hentaila.tv no entregÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³ player.php");
+  }
+
+  const playerHtml = await getText(playerUrl, pageUrl);
+  const config = decodeTvConfig(playerHtml);
+
+  const body = new URLSearchParams();
+  body.set("action", "zarat_get_data_player_ajax");
+  body.set("a", config.en);
+  body.set("b", config.iv);
+
+  let apiUrl = HENTAILA_TV_API;
+
+  try {
+    apiUrl = new URL(
+      "api.php",
+      String(config.uri).replace(/\/?$/, "/")
+    ).href;
+  } catch {}
+
+  const response = await kino.fetch(apiUrl, {
+    method: "POST",
+    headers: {
+      Origin: HENTAILA_TV,
+      Referer: playerUrl,
+      "Content-Type": "application/x-www-form-urlencoded"
     },
-    body: {
-      type: "SingleChildScrollView",
-      children: [{
-        type: "Column", padding: 16, gap: 12,
-        children: [
-          { type: "Text", text: "Si ves errores 403, debes renovar tu sesión.", textEn: "If you see 403 errors, you must renew your session." },
-          {
-            type: "ElevatedButton", key: "openPlayer", labelText: "Abrir Navegador (Renovar Cookies)", labelTextEn: "Open Browser (Renew Cookies)",
-            onPressed: "openPlayer", autofocus: true
-          },
-          { type: "Text", text: "Espera a que cargue la web completamente y luego cierra el navegador.", style: { fontSize: 12, color: "#888" } }
-        ]
-      }]
+    body: body.toString(),
+    timeoutMs: TIMEOUT
+  });
+
+  if (!response.ok) {
+    throw new Error("API Hentaila.tv respondiÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³ " + response.status);
+  }
+
+  const responseText = await response.text();
+  let data;
+
+  try {
+    data = JSON.parse(responseText);
+  } catch {
+    throw new Error("Respuesta invÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡lida de Hentaila.tv");
+  }
+
+  if (!data.status || !data.data || !Array.isArray(data.data.sources)) {
+    throw new Error("Hentaila.tv no entregÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³ fuentes");
+  }
+
+  const source = data.data.sources.find(item =>
+    item && item.src && /^https?:\/\//i.test(item.src)
+  );
+
+  if (!source) {
+    throw new Error("No se encontrÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³ el video de Hentaila.tv");
+  }
+
+  return {
+    url: source.src,
+    mime: source.type || mimeOf(source.src),
+    headers: {
+      Referer: HENTAILA_TV + "/",
+      Origin: HENTAILA_TV
     }
   };
 }
 
-export async function screenEvent({ name } = {}) {
-  if (name === "openPlayer") {
+// ---- resoluciÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³n Kino --------------------------------------------------------
+
+export async function resolve(ref) {
+  const parts = String(ref || "").split("~");
+
+  // Servidor alternativo de Hentaila.com.
+  if (parts[0] === "p") {
+    let dataId;
+
     try {
-      await kino.visualBrowser.open({
-        url: BASE + "/",
-        title: "VeoHentai - Verificación",
-        userAgent: UA,
-        timeoutMs: 120000
-      });
-      // Al volver, forzamos la recarga de cookies en memoria
-      await refreshCookies();
-      log("Cookies renovadas tras cerrar navegador.");
-    } catch (error) {
-      log("Error abriendo VeoHentai:", error);
+      dataId = decodeRef(parts.slice(1).join("~"));
+    } catch {
+      throw kino.error("not_found", "Servidor alternativo invÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡lido");
+    }
+
+    try {
+      const entry = parseServerDataId(dataId);
+      return await playServer(entry, HENTAILA_COM + "/");
+    } catch (e) {
+      log("FallÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³ servidor alternativo", e.message);
+      throw kino.error("unavailable", e.message);
     }
   }
-  return null;
+
+  // SelecciÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³n directa de Hentaila.tv.
+  if (parts[0] === "t" && parts[1]) {
+    try {
+      const stream = await resolveHentailaTv(
+        parts[1],
+        Number(parts[2]) || 1
+      );
+
+      return {
+        ...stream,
+        label: "Hentaila TV"
+      };
+    } catch (e) {
+      log("Hentaila.tv fallÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³", e.message);
+      throw kino.error("unavailable", e.message);
+    }
+  }
+
+  if (parts[0] !== "v" || !parts[1]) {
+    throw kino.error("not_found", "Episodio invÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡lido");
+  }
+
+  const slug = parts[1];
+  const num = Number(parts[2]) || 1;
+
+  // Primero intenta Hentaila.com.
+  try {
+    const stream = await resolveHentailaCom(slug, num);
+    const alternatives = (stream.alternatives || []).slice();
+
+    alternatives.push({
+      label: "Hentaila.tv",
+      ref: "t~" + slug + "~" + num
+    });
+
+    return {
+      ...stream,
+      label: "Hentaila COM",
+      alternatives
+    };
+  } catch (comError) {
+    log("Hentaila.com fallÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³", comError.message);
+  }
+
+  // Si falla Hentaila.com, intenta Hentaila.tv automÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ticamente.
+  try {
+    const stream = await resolveHentailaTv(slug, num);
+
+    return {
+      ...stream,
+      label: "Hentaila TV"
+    };
+  } catch (tvError) {
+    log("Hentaila.tv fallÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³", tvError.message);
+
+    throw kino.error(
+      "unavailable",
+      "No se pudo obtener el video desde ninguno de los reproductores"
+    );
+  }
 }
+
+
+
