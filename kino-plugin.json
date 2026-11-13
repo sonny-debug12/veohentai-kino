@@ -2,9 +2,9 @@
     "id":  "veohentai",
     "name":  "VeoHentai Multi",
     "version":  "1.1.0",
-    "apiVersion":  14,
+    "apiVersion":  6,
     "entry":  "plugin.js",
-    "description":  "Catalogo de VeoAnime con reproduccion desde Hentaila.com y Hentaila.tv.",
+    "description":  "CatÃ¡logo de VeoAnime con reproducciÃ³n desde Hentaila.com y Hentaila.tv.",
     "author":  "Vaysin",
     "icon":  "icon.png",
     "color":  "#E23A5E",
@@ -24,13 +24,10 @@
                   "susanexpectcare.com"
               ],
     "streamHosts":  "any",
-    "screen": { "label": "Buscar", "icon": "search" },
     "capabilities":  [
                          "home",
                          "search",
                          "episodes",
-                         "resolve",
-                         "screen"
+                         "resolve"
                      ]
 }
-
