@@ -281,18 +281,16 @@ function catalogItems(cards) {
       continue;
     }
 
-    const key = ep.slug.replace(/-/g, "_");
-
-    if (seriesMap.has(key)) continue;
+    if (seriesMap.has(ep.slug)) continue;
 
     const grouped = {
-      slug: key,
-      title: seriesTitle(c.title, key),
+      slug: ep.slug,
+      title: seriesTitle(c.title, ep.slug),
       poster: c.poster
     };
 
     const item = seriesItem(grouped);
-    seriesMap.set(key, item);
+    seriesMap.set(ep.slug, item);
     result.push(item);
   }
 
