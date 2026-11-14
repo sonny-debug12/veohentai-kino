@@ -446,41 +446,63 @@ export async function episodes(ref) {
   }
 
   const seriesUrl = abs("/serie/" + slug + "/");
-
+  let sourceUrl = seriesUrl;
   let html;
+  let fromSearch = false;
 
   try {
     html = await getText(seriesUrl, BASE + "/");
-  } catch (e) {
-    throw kino.error(
-      "not_found",
-      "no se pudo abrir la serie: " + e.message
-    );
+  } catch (originalError) {
+    const searchTerm = slug.replace(/_/g, "-")
+      .split("-").slice(0, 2).join("-");
+
+    sourceUrl = abs("/buscar?q=" + encodeURIComponent(searchTerm));
+
+    try {
+      html = await getText(sourceUrl, BASE + "/");
+      fromSearch = true;
+      log("episodios: usando búsqueda alternativa", slug);
+    } catch (e) {
+      throw kino.error(
+        "not_found",
+        "no se pudo abrir la serie: " + originalError.message
+      );
+    }
   }
 
-  const titleM = /<h1\b[^>]*>([\s\S]*?)<\/h1>/i.exec(html);
-  const seriesName = clean(
-    titleM ? titleM[1] : slug.replace(/-/g, " "),
-    200
-  );
+  const titleM = fromSearch
+    ? null
+    : /<h1\b[^>]*>([\s\S]*?)<\/h1>/i.exec(html);
 
-  // Prioriza la portada del contenido principal, no el logo.
-  const seriesPoster = extractImage(html, seriesUrl);
+  const normalizedSlug = slug.replace(/[-_]/g, "");
+
+  const matchingCards = parseCards(html, sourceUrl).filter(c => {
+    const ep = splitEpisode(c.slug);
+    return ep && ep.slug.replace(/[-_]/g, "") === normalizedSlug;
+  });
+
+  const seriesName = fromSearch
+    ? seriesTitle(matchingCards[0]?.title || "", slug)
+    : clean(titleM ? titleM[1] : slug.replace(/-/g, " "), 200);
+
+  const seriesPoster = fromSearch
+    ? (matchingCards.find(c => c.poster)?.poster || "")
+    : extractImage(html, seriesUrl);
 
   const list = [];
   const seen = new Set();
 
-  for (const c of parseCards(html, seriesUrl)) {
+  for (const c of matchingCards) {
     const ep = splitEpisode(c.slug);
 
-    if (!ep || ep.slug.replace(/-/g, "_") !== slug.replace(/-/g, "_") || seen.has(c.slug)) continue;
-
+    if (!ep || seen.has(c.slug)) continue;
     seen.add(c.slug);
 
     list.push({
       season: 1,
       number: ep.num,
-      ref: "v~" + ep.slug + "~" + ep.num + "~" + encodeURIComponent(seriesName).replace(/~/g, "%7E"),
+      ref: "v~" + ep.slug + "~" + ep.num + "~" +
+        encodeURIComponent(seriesName).replace(/~/g, "%7E"),
       title: c.title || msg(
         "Episodio " + ep.num,
         "Episode " + ep.num
@@ -498,10 +520,7 @@ export async function episodes(ref) {
 
   return {
     series: {
-      title: clean(
-        titleM ? titleM[1] : slug.replace(/-/g, " "),
-        200
-      ),
+      title: seriesName,
       poster: seriesPoster,
       genres: ["anime"]
     },
