@@ -30,7 +30,7 @@ async function getText(url, referer) {
     timeoutMs: TIMEOUT
   });
 
-  if (!r.ok) throw new Error(url + " respondiÃ³ con HTTP " + r.status);
+  if (!r.ok) throw new Error(url + " respondió con HTTP " + r.status);
   return r.text();
 }
 
@@ -151,7 +151,7 @@ function srcsetUrl(value) {
   return candidates.length ? candidates[candidates.length - 1] : "";
 }
 
-// Extrae imÃ¡genes evitando logos, iconos y placeholders.
+// Extrae imágenes evitando logos, iconos y placeholders.
 function extractImage(block, pageUrl) {
   if (!block) return undefined;
 
@@ -300,7 +300,7 @@ function episodeItem(c) {
   };
 }
 
-// Agrupa capÃ­tulos de una misma serie.
+// Agrupa capítulos de una misma serie.
 function catalogItems(cards) {
   const result = [];
   const seriesMap = new Map();
@@ -329,7 +329,7 @@ function catalogItems(cards) {
   return result;
 }
 
-// ---- bÃºsqueda --------------------------------------------------------------
+// ---- búsqueda --------------------------------------------------------------
 
 export async function search(query) {
   await null;
@@ -364,14 +364,14 @@ export async function search(query) {
           BASE + "/"
         );
       } catch (e) {
-        log("bÃºsqueda fallida", term, e.message);
+        log("búsqueda fallida", term, e.message);
         return null;
       }
     })
   );
 
   if (answers.every(a => a === null)) {
-    throw kino.error("unavailable", "el sitio no respondiÃ³");
+    throw kino.error("unavailable", "el sitio no respondió");
   }
 
   const found = [];
@@ -459,7 +459,7 @@ export async function home() {
   }
 
   if (!rows.length) {
-    throw kino.error("unavailable", "el sitio no devolviÃ³ nada");
+    throw kino.error("unavailable", "el sitio no devolvió nada");
   }
 
   return rows;
@@ -624,7 +624,7 @@ async function sourceEpisodeHtml(base, slug, num) {
   }
 }
 
-// Busca el reproductor incrustado en la pÃ¡gina del episodio.
+// Busca el reproductor incrustado en la página del episodio.
 function parsePlayerEmbed(html, pageUrl) {
   const re = /<(?:iframe|embed)\b[^>]*>/gi;
   let m;
@@ -677,14 +677,14 @@ function parseServerDataId(dataId) {
   try {
     decoded = b64(decodeURIComponent(vidM[1]));
   } catch {
-    throw new Error("data-id invÃ¡lido");
+    throw new Error("data-id inválido");
   }
 
   const parts = decoded.split("|");
   const file = parts[0];
 
   if (!/^https?:\/\//i.test(file)) {
-    throw new Error("URL de video invÃ¡lida");
+    throw new Error("URL de video inválida");
   }
 
   let subtitle;
@@ -728,7 +728,7 @@ function parseServers(page) {
 async function fromVoe(url) {
   const idM = /\/e\/([a-z0-9]+)/i.exec(url);
 
-  if (!idM) throw new Error("ID de VOE invÃ¡lido");
+  if (!idM) throw new Error("ID de VOE inválido");
 
   const pageUrl = "https://arianathankspecial.com/e/" + idM[1];
   const html = await getText(pageUrl, "https://arianathankspecial.com/");
@@ -736,13 +736,13 @@ async function fromVoe(url) {
   const blobM =
     /<script type="application\/json">\s*(\[[\s\S]*?\])\s*<\/script>/i.exec(html);
 
-  if (!blobM) throw new Error("VOE no entregÃ³ datos");
+  if (!blobM) throw new Error("VOE no entregó datos");
 
   const list = JSON.parse(blobM[1]);
   const encoded = Array.isArray(list) ? list[0] : null;
 
   if (typeof encoded !== "string") {
-    throw new Error("Datos VOE invÃ¡lidos");
+    throw new Error("Datos VOE inválidos");
   }
 
   const clean1 = rot13(encoded).replace(
@@ -761,7 +761,7 @@ async function fromVoe(url) {
   const file = json.source || json.direct_access_url;
 
   if (!file || !/^https?:\/\//i.test(file)) {
-    throw new Error("VOE no entregÃ³ el archivo");
+    throw new Error("VOE no entregó el archivo");
   }
 
   return {
@@ -771,7 +771,7 @@ async function fromVoe(url) {
   };
 }
 
-// Conserva aquÃ­ tu funciÃ³n withSubtitle original sin modificarla.
+// Conserva aquí tu función withSubtitle original sin modificarla.
 
 async function playServer(entry, referer) {
   if (typeof entry === "string") {
@@ -1183,261 +1183,326 @@ try {
 
 }
 
-export async function screen({ state = {}, device = 'phone' } = {}) {
-  const gridColumns = device === 'tv' ? 5 : 3;
-  const section = state.section === "genres" ? "genres" : "catalog";
+// Caché de sesión: las filas del catálogo son ~52 KB y el estado tope es 64 KB
+let rowsCache = null;
+let genresCache = null;
+
+export async function screen({ state = {}, device = 'phone', size = 'compact' } = {}) {
+  const isTv = device === 'tv';
+  const cols = isTv ? 6 : { compact: 3, medium: 4, expanded: 5 };
+  const section = state.section === 'genres' ? 'genres' : 'catalog';
   const results = Array.isArray(state.results) ? state.results : [];
-  const genres = Array.isArray(state.genres) ? state.genres : [];
+  const genres  = Array.isArray(state.genres) && state.genres.length > 0 ? state.genres : (genresCache || []);
   const genreItems = Array.isArray(state.genreItems) ? state.genreItems : [];
 
-  let rows = [];
+  // Las filas viven en la caché de sesión: volver al catálogo no vuelve a pedirlas
+  let rows = Array.isArray(state.rows) ? state.rows : rowsCache;
+  if (!rows && section === 'catalog' && !state.selectedGenre && !state.searched) {
+    try { rows = await home(); rowsCache = rows; } catch (e) { log('home en screen fallido', e.message); rows = []; }
+  }
+  rows = rows || [];
 
-  if (section === "catalog" && !state.selectedGenre) {
-    try {
-      rows = await home();
-    } catch (e) {
-      log("Catalogo en pantalla fallido", e.message);
+  // Hero: primer ítem del primer rail
+  const heroItem = rows.length > 0 && Array.isArray(rows[0].items) && rows[0].items.length > 0
+    ? rows[0].items[0] : null;
+
+  // ── body content ────────────────────────────────────────────────────────
+  let bodyChildren = [];
+
+  if (results.length > 0) {
+    // Resultados de búsqueda activos
+    bodyChildren = [
+      { type: 'Row', padding: 16, gap: 8, children: [
+        { type: 'Text', text: results.length + ' resultados', style: 'h4', flex: 1 },
+        { type: 'TextButton', labelText: 'Limpiar', labelTextEn: 'Clear', onPressed: 'clear-search' }
+      ]},
+      { type: 'titleGrid', columns: cols, items: results, done: true }
+    ];
+  } else if (state.searched) {
+    bodyChildren = [
+      { type: 'emptyState',
+        title: 'Sin resultados',
+        titleEn: 'No results',
+        text: 'Prueba con otro término.',
+        textEn: 'Try a different term.' },
+      { type: 'Row', mainAxisAlignment: 'center', children: [
+        { type: 'TextButton', labelText: 'Limpiar búsqueda', labelTextEn: 'Clear search', onPressed: 'clear-search' }
+      ]}
+    ];
+  } else if (section === 'catalog') {
+    if (false && heroItem) {
+      bodyChildren.push({
+        type: 'heroCard',
+        title: heroItem.title,
+        image: heroItem.backdrop || heroItem.poster || '',
+        text: heroItem.overview || '',
+        buttons: [
+          { type: 'ElevatedButton', labelText: 'Ver ahora', labelTextEn: 'Watch now',
+            onPressed: { event: 'hero-open', arg: JSON.stringify({ id: heroItem.id, ref: heroItem.ref, title: heroItem.title, kind: heroItem.kind || 'series', poster: heroItem.poster || '' }) } }
+        ]
+      });
+    }
+    for (const row of rows) {
+      bodyChildren.push({ type: 'titleRail', title: row.title, items: row.items, size: 'medium' });
+    }
+    if (rows.length === 0) {
+      bodyChildren.push({ type: 'loading' });
+    }
+  } else if (section === 'genres') {
+    if (state.selectedGenre) {
+      // Vista interior de un género
+      bodyChildren = [
+        { type: 'Row', padding: 16, gap: 8, crossAxisAlignment: 'center', children: [
+          { type: 'IconButton', icon: 'arrow_back', labelText: 'Volver', labelTextEn: 'Back', onPressed: 'back-genres' },
+          { type: 'Text', text: state.selectedGenreTitle || 'Género', style: 'h3', flex: 1 }
+        ]},
+        ...(genreItems.length
+          ? [{ type: 'titleGrid', columns: cols, items: genreItems,
+               onEndReached: state.genreHasMore ? { event: 'genre-more' } : undefined,
+               loadingMore: state.genreLoadingMore === true,
+               done: !state.genreHasMore }]
+          : [state.genreLoadingMore
+              ? { type: 'loading' }
+              : { type: 'emptyState', title: 'Sin títulos', titleEn: 'No titles',
+                  text: 'Este género no tiene contenido disponible.',
+                  textEn: 'This genre has no content available.' }
+            ]
+        )
+      ];
+    } else if (genres.length > 0) {
+      // Géneros como lista normal: filas con el nombre, sin portadas
+      bodyChildren = [
+        { type: 'Text', text: 'Explorar por género', textEn: 'Browse by genre',
+          style: 'h4', padding: 16 },
+        { type: 'Column', gap: 0, children: genres.map(g => ({
+            type: 'ListTile',
+            key: 'genre-' + g.slug,
+            title: g.title,
+            dense: true,
+            onTap: { event: 'genre', arg: g.slug }
+          })) }
+      ];
+    } else if (state.genresError && state.genresTried) {
+      bodyChildren = [{ type: 'errorState',
+        title: 'Error al cargar géneros', titleEn: 'Could not load genres',
+        text: 'Toca para reintentar.', textEn: 'Tap to retry.',
+        onRetry: 'retry-genres' }];
+    } else {
+      // La sección ya está pintada: el tick `hydrate-genres` trae la lista
+      bodyChildren = [{ type: 'loading' }];
     }
   }
 
-  const children = [
-    {
-      type: "button",
-      label: "Buscar títulos",
-      onTap: "open-search"
-    },
+  // Mientras falten los géneros, un tick los pide y la pantalla ya muestra su sección
+  const needsGenres = genres.length === 0 && !(state.genresTried === true && state.genresError === true);
 
-    ...(state.searchOpen
-      ? [{
-          type: "TextField",
-          key: "query",
-          value: state.query || "",
-          hintText: "Escribe el titulo...",
-          onChange: "typed",
-          onSubmit: "search",
-          trailingIcon: "search",
-          trailingLabel: "Buscar",
-          onTrailingTap: "search"
-        }]
-      : []),
-
-    { type: "Text", text: "VerHentai", style: "h3" },
-
-    {
-      type: "tabs",
-      tabs: [
-        { value: "catalog", label: "Catálogo" },
-        { value: "genres", label: "Géneros" }
-      ],
-      value: section,
-      onChange: "section"
-    },
-
-    ...(results.length
-      ? [
-          { type: "Text", text: "Resultados", style: "h3" },
-          {
-            type: "titleGrid",
-            items: results,
-            columns: gridColumns,
-            size:"small"
-          }
-        ]
-      : state.searched
-        ? [{
-            type: "Text",
-            text: "No se encontraron resultados.",
-            style: "caption"
-          }]
-        : []),
-
-    ...(section === "catalog" && !state.searched
-      ? rows.map(row => ({
-          type: "titleRail",
-          title: row.title,
-          items: row.items
-        }))
-      : state.selectedGenre
-        ? [
-            {
-              type: "button",
-              label: "Volver a géneros",
-              onTap: "back-genres"
-            },
-            {
-              type: "Text",
-              text: state.selectedGenreTitle || "Género",
-              style: "h3"
-            },
-            ...(genreItems.length ? [{ type: "titleGrid", items: genreItems, columns: gridColumns, size: "small" }] : [{ type: "Text", text: "Este género no tiene títulos disponibles.", style: "caption" }]),
-            ...(state.genreHasMore ? [{ type: "button", label: "Cargar más", onTap: "genre-more" }] : [])
-          ]
-        : genres.length
-          ? genres.map(genre => ({
-              type: "listTile",
-              key: "genre-" + genre.slug,
-              title: genre.title,
-
-              onTap: "genre",
-              arg: genre.slug
-            }))
-          : [{
-              type: "Text",
-              text: state.genresError
-                ? "No se pudieron cargar los géneros."
-                : "Abre la pestaña Géneros para cargar las categorías.",
-              style: "caption"
-            }])
-  ];
-
+  // ── Scaffold con AppBar + NavigationBar ─────────────────────────────────
   return {
-    type: "scroll",
-    direction: "vertical",
-    children: [
-      {
-        type: "Column",
-        padding: 16,
-        gap: 12,
-        children
-      }
-    ]
+    type: 'Scaffold',
+    ...(needsGenres ? { every: { ms: 1000, event: 'hydrate-genres' } } : {}),
+    appBar: {
+      type: 'AppBar',
+      dense: true,
+      title: 'Veo Hentai',
+      mergeWithKinoBar: true,
+      leading: {
+        type: 'IconButton',
+        icon: 'arrow_back',
+        labelText: 'Cerrar',
+        labelTextEn: 'Close',
+        onPressed: { event: 'close-screen' }
+      },
+      ...(isTv ? {
+        bottom: {
+          type: 'tabs',
+          tabs: [
+            { value: 'catalog', label: 'Catálogo' },
+            { value: 'genres', label: 'Géneros' }
+          ],
+          value: section,
+          onChange: 'section',
+          divider: false
+        }
+      } : {}),
+      actions: [
+        { type: 'IconButton', icon: 'search', labelText: 'Buscar', labelTextEn: 'Search',
+          onPressed: { event: 'open-search' } }
+      ]
+    },
+    ...(isTv ? {} : {
+    bottomNavigationBar: {
+      type: 'NavigationBar',
+      value: section,
+      onChanged: 'section',
+      items: [
+        { key: 'catalog', icon: 'home',  label: 'Catálogo', labelEn: 'Catalog' },
+        { key: 'genres',  icon: 'list',  label: 'Géneros',  labelEn: 'Genres'  }
+      ]
+    }
+    }),
+    body: {
+      type: 'SingleChildScrollView',
+      children: [
+        ...(state.searchOpen ? [{
+          type: 'Column',
+          padding: 16,
+          gap: 0,
+          children: [{
+            type: 'TextField',
+            key: 'query',
+            value: state.query || '',
+            hintText: 'Buscar títulos...',
+            hintTextEn: 'Search titles...',
+            onChange: 'typed',
+            onSubmit: 'search',
+            trailingIcon: 'search',
+            trailingLabel: 'Buscar',
+            trailingLabelEn: 'Search',
+            onTrailingTap: 'search'
+          }]
+        }] : []),
+        {
+  type: 'Column',
+  fill: true,
+  align: 'stretch',
+  gap: 16,
+  children: bodyChildren
+}
+      ]
+    }
   };
 }
 
 export async function screenEvent({ name, value, arg, state = {} }) {
-if (name === "open-search") {
-    return {
-      state: { ...state, searchOpen: true },
-      focus: "query"
-    };
+  if (name === 'close-screen') {
+    return { close: true };
+  }
+  if (name === 'open-search') {
+    return { state: { ...state, searchOpen: true }, focus: 'query' };
   }
 
-  if (name === "section") {
-    if (value === "genres") {
-      try {
-        const genres = await getGenres();
-
-        return {
-          state: {
-            ...state,
-            section: "genres",
-            genres,
-            genresError: false,
-            selectedGenre: null,
-            genreItems: []
-          }
-        };
-      } catch (e) {
-        log("Carga de generos fallida", e.message);
-
-        return {
-          state: {
-            ...state,
-            section: "genres",
-            genres: [],
-            genresError: true
-          },
-          toast: "No se pudieron cargar los géneros."
-        };
+  if (name === 'section') {
+    // Cambia de sección al instante: si faltan datos, la pantalla pinta su spinner
+    const base = { ...state, section: value, results: [], searched: false, searchOpen: false,
+                   selectedGenre: null, genreItems: [] };
+    if (value === 'genres') {
+      const cached = Array.isArray(state.genres) && state.genres.length > 0 ? state.genres : genresCache;
+      if (cached && cached.length > 0) {
+        return { state: { ...base, genres: cached, genresTried: true, genresLoading: false, genresError: false } };
       }
+      return { state: { ...base, genres: [], genresLoading: true } };
     }
-
-    return {
-      state: {
-        ...state,
-        section: "catalog",
-        selectedGenre: null,
-        genreItems: []
-      }
-    };
+    return { state: base };
   }
 
-  if (name === "genre") {
-    const slug = String(arg || "");
+  // Tick del screen (`every`): trae los géneros sin retener el cambio de sección
+  if (name === 'hydrate-genres') {
+    if (Array.isArray(state.genres) && state.genres.length > 0) return null;
+    try {
+      const genres = genresCache && genresCache.length > 0 ? genresCache : await getGenres();
+      genresCache = genres;
+      return { state: { ...state, genres, genresLoading: false, genresTried: true, genresError: false } };
+    } catch (e) {
+      log('Carga de géneros fallida', e.message);
+      return { state: { ...state, genresLoading: false, genresTried: true, genresError: true } };
+    }
+  }
 
+  if (name === 'retry-genres') {
+    // Vuelve al spinner y deja que el tick reintente
+    return { state: { ...state, genres: [], genresLoading: true, genresTried: false, genresError: false } };
+  }
+
+  if (name === 'genre') {
+    const slug = String(arg || '');
     try {
       const result = await getGenrePage(slug, 1);
       const selected = (state.genres || []).find(g => g.slug === slug);
-
       return {
         state: {
           ...state,
-          section: "genres",
+          section: 'genres',
           selectedGenre: slug,
           selectedGenreTitle: selected?.title || slug,
           genreItems: result.items,
           genrePage: 1,
-          genreHasMore: result.totalPages > 1
-        },
-        
+          genreHasMore: result.totalPages > 1,
+          genreLoadingMore: false
+        }
       };
     } catch (e) {
-      log("Carga de genero fallida", e.message);
-      return { toast: "No se pudo cargar ese género." };
+      log('Carga de género fallida', e.message);
+      return { toast: 'No se pudo cargar ese género.' };
     }
   }
 
-  if (name === "genre-more") {
-    const slug = String(state.selectedGenre || "");
-    const page = Number(state.genrePage || 1) + 1;
+  if (name === 'genre-more') {
+    const slug  = String(state.selectedGenre || '');
+    const page  = Number(state.genrePage || 1) + 1;
     try {
-      const result = await getGenrePage(slug, page);
+      const result   = await getGenrePage(slug, page);
       const existing = Array.isArray(state.genreItems) ? state.genreItems : [];
-      const seen = new Set(existing.map(item => item.id || item.ref || item.title));
-      const added = result.items.filter(item => {
-        const key = item.id || item.ref || item.title;
-        if (seen.has(key)) return false;
-        seen.add(key);
+      const seen     = new Set(existing.map(i => i.id || i.ref || i.title));
+      const added    = result.items.filter(i => {
+        const k = i.id || i.ref || i.title;
+        if (seen.has(k)) return false;
+        seen.add(k);
         return true;
       });
-      return { state: { ...state, genreItems: [...existing, ...added], genrePage: page, genreHasMore: page < result.totalPages } };
+      return {
+        state: { ...state, genreItems: [...existing, ...added], genrePage: page,
+                 genreHasMore: page < result.totalPages, genreLoadingMore: false }
+      };
     } catch (e) {
-      log("Carga de mas titulos fallida", e.message);
-      return { toast: "No se pudieron cargar más títulos." };
+      log('Carga de más títulos fallida', e.message);
+      return { state: { ...state, genreLoadingMore: false }, toast: 'No se pudieron cargar más títulos.' };
     }
   }
-  if (name === "back-genres") {
-    return {
-      state: {
-        ...state,
-        selectedGenre: null,
-        genreItems: []
-      }
-    };
+
+  if (name === 'back-genres') {
+    return { state: { ...state, selectedGenre: null, genreItems: [] } };
   }
 
-  if (name === "typed") {
-    return { state: { ...state, query: value || "" } };
+  if (name === 'typed') {
+    return { state: { ...state, query: value || '' } };
   }
 
-  if (name === "search") {
-    const query = String(state.query || "").trim();
-    if (!query) return { toast: "Escribe un titulo para buscar." };
-
+  if (name === 'search') {
+    const query = String(state.query || '').trim();
+    if (!query) return { toast: 'Escribe un título para buscar.' };
     try {
-      const results = await search({ q: query });
-      const found = Array.isArray(results) ? results : [];
-
+      const found = await search({ q: query });
       return {
-        state: {
-          ...state,
-          searchOpen: false,
-          query,
-          results: found,
-          searched: true
-        }
+        state: { ...state, searchOpen: false, query, results: Array.isArray(found) ? found : [], searched: true }
       };
     } catch {
       return {
-        state: {
-          ...state,
-          searchOpen: false,
-          results: [],
-          searched: true
-        },
-        toast: "No se pudo completar la busqueda."
+        state: { ...state, searchOpen: false, results: [], searched: true },
+        toast: 'No se pudo completar la búsqueda.'
       };
     }
+  }
+
+  // Fix #9: clear-search limpia estado y vuelve a catálogo
+  if (name === 'clear-search') {
+    return { state: { ...state, results: [], searched: false, query: '', searchOpen: false, section: 'catalog' } };
+  }
+
+  // "Ver ahora" del heroCard: abrir la ficha del título
+  if (name === 'hero-open') {
+    try {
+      const item = JSON.parse(arg || '{}');
+      if (item.ref && item.kind) {
+        const go = { ref: item.ref, kind: item.kind };
+        if (item.id)    go.id = item.id;
+        if (item.title) go.title = item.title;
+        return { go: { title: go } };
+      }
+      log('hero-open sin ref o kind', String(arg || '').slice(0, 80));
+    } catch (e) {
+      log('hero-open arg inválido', e.message);
+    }
+    return null;
   }
 
   return null;
