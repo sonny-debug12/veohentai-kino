@@ -30,6 +30,7 @@
   ],
   "fetchHosts": "any",
   "streamHosts": "any",
+  "browser": true,
   "screen": {
     "label": "Explorar",
     "labelEn": "Explore",

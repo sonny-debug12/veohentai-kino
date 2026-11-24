@@ -730,14 +730,36 @@ async function fromVoe(url) {
 
   if (!idM) throw new Error("ID de VOE inválido");
 
-  const pageUrl = "https://arianathankspecial.com/e/" + idM[1];
-  const html = await getText(pageUrl, "https://arianathankspecial.com/");
+  let pageUrl = url;
+  let blobM = null;
+  const visited = new Set();
 
-  const blobM =
-    /<script type="application\/json">\s*(\[[\s\S]*?\])\s*<\/script>/i.exec(html);
+  for (let i = 0; i < 10; i++) {
+    if (visited.has(pageUrl)) throw new Error("VOE: ciclo de redirecciones");
+    visited.add(pageUrl);
 
-  if (!blobM) throw new Error("VOE no entregó datos");
+    const html = await getText(pageUrl, new URL(pageUrl).origin + "/");
 
+    blobM =
+      /<script type="application\/json">\s*(\[[\s\S]*?\])\s*<\/script>/i.exec(html);
+
+    if (blobM) break;
+
+    const redirectM =
+      /(?:window\.)?location(?:\.href)?\s*=\s*['"]([^'"]+)['"]/i.exec(html);
+
+    if (!redirectM) throw new Error("VOE no entregó datos ni redirección");
+
+    const nextUrl = new URL(redirectM[1], pageUrl);
+
+    if (nextUrl.protocol !== "https:" || !/\/e\/[a-z0-9]+/i.test(nextUrl.pathname)) {
+      throw new Error("VOE: redirección no válida");
+    }
+
+    pageUrl = nextUrl.href;
+  }
+
+  if (!blobM) throw new Error("VOE: demasiadas redirecciones");
   const list = JSON.parse(blobM[1]);
   const encoded = Array.isArray(list) ? list[0] : null;
 
@@ -913,10 +935,29 @@ async function resolveHentailaCom(slug, num, title) {
     throw new Error("Hentaila.com no entregó servidor Voe");
   }
 
-  log("Hentaila.com: usando servidor Voe");
-  return await fromVoe(voe.url);
+ const yourupload = servers.find(server => /yourupload/i.test(server.server) || /yourupload/i.test(server.url));
+
+try {
+  log("Hentaila.com: intentando VOE");
+  const stream = await fromVoe(voe.url);
+  const probe = await kino.fetch(stream.url, {
+    headers: { ...(stream.headers || {}), Range: "bytes=0-0" },
+    maxBytes: 1,
+    timeoutMs: TIMEOUT
+  });
+  if (!probe.ok) throw new Error("Video VOE ca?do: HTTP " + probe.status);
+  if (yourupload) stream.alternatives = [{ label: "YourUpload", ref: "y~" + encodeRef(yourupload.url) }];
+  return stream;
+} catch (voeError) {
+  log("VOE fall?; intentando YourUpload: " + voeError.message);
+  if (!yourupload) throw voeError;
+  const cap = await kino.browser.capture(yourupload.url, { headers: { Referer: HENTAILA_COM + "/" } });
+  const media = cap?.media?.find(item => item.url);
+  if (!media) throw new Error("VOE fall? y YourUpload no entreg? el video");
+  return { url: media.url, mime: media.mime || mimeOf(media.url), headers: { Referer: new URL(yourupload.url).origin + "/", ...(media.headers || {}) } };
 }
 
+}
 
 // ---- Hentaila.tv ------------------------------------------------------------
 
@@ -1108,6 +1149,34 @@ export async function resolve(ref) {
       return await playServer(entry, HENTAILA_COM + "/");
     } catch (e) {
       log("Falló servidor alternativo", e.message);
+      throw kino.error("unavailable", e.message);
+    }
+  }
+
+  // Servidor alternativo YourUpload.
+  if (parts[0] === "y") {
+    let url;
+    try {
+      url = decodeRef(parts.slice(1).join("~"));
+    } catch {
+      throw kino.error("not_found", "URL de YourUpload inválida");
+    }
+    try {
+      const cap = await kino.browser.capture(url, {
+        headers: { Referer: HENTAILA_COM + "/" }
+      });
+      const media = cap?.media?.find(item => item.url);
+      if (!media) throw new Error("YourUpload no entregó el video");
+      return {
+        url: media.url,
+        mime: media.mime || mimeOf(media.url),
+        headers: {
+          Referer: new URL(url).origin + "/",
+          ...(media.headers || {})
+        }
+      };
+    } catch (e) {
+      log("Falló YourUpload", e.message);
       throw kino.error("unavailable", e.message);
     }
   }
