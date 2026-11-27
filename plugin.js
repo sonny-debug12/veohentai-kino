@@ -1,7 +1,7 @@
 const BASE = "https://veohentai.com";
 const PLAYER = "https://hentaiplayer.com";
 const TIMEOUT = 12000;
-const MAX_ITEMS = 60;
+const MAX_ITEMS = 70;
 const MAX_EPISODES = 3000;
 
 function log(...args) {
@@ -48,6 +48,59 @@ function clean(text, max) {
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, max || 200);
+}
+
+function extractVeoEpisodeDescription(html) {
+  const scripts = String(html || "").matchAll(
+    /<script\b[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi
+  );
+
+  for (const match of scripts) {
+    try {
+      const parsed = JSON.parse(match[1]);
+      const queue = Array.isArray(parsed) ? [...parsed] : [parsed];
+
+      while (queue.length) {
+        const item = queue.shift();
+        if (!item || typeof item !== "object") continue;
+        if (Array.isArray(item["@graph"])) queue.push(...item["@graph"]);
+
+        const types = Array.isArray(item["@type"])
+          ? item["@type"] : [item["@type"]];
+
+        if (types.includes("VideoObject") && item.description) {
+          return clean(item.description, 3000);
+        }
+      }
+    } catch (_) {}
+  }
+  return "";
+}
+
+function extractHentailaSynopsis(raw) {
+  try {
+    const parsed = JSON.parse(raw);
+    for (const node of parsed.nodes || []) {
+      const data = node && node.data;
+      if (!Array.isArray(data) || !data[0]) continue;
+
+      const media = data[data[0].media];
+      if (!media || typeof media !== "object") continue;
+
+      const synopsis = data[media.synopsis];
+      if (typeof synopsis === "string" && synopsis.trim()) {
+        return clean(synopsis, 3000);
+      }
+    }
+  } catch (_) {}
+  return "";
+}
+
+async function getHentailaSynopsis(slug) {
+  const url = HENTAILA_COM + "/media/" + slug + "/__data.json";
+  return extractHentailaSynopsis(
+    await getText(url, HENTAILA_COM + "/")
+  );
 }
 
 function imageUrl(value, pageUrl) {
@@ -138,6 +191,44 @@ function parseGenres(html) {
   }
 
   return genres;
+}
+
+
+function parseStudios(html) {
+  const studios = [];
+  const seen = new Set();
+  const re = /<a\b[^>]*href\s*=\s*(["'])([^"']*\/brand\/([^/"'?#]+)\/?)[^"']*\1[^>]*>([\s\S]*?)<\/a>/gi;
+  let m;
+
+  while ((m = re.exec(html))) {
+    const slug = m[3];
+    if (!slug || seen.has(slug)) continue;
+
+    const block = m[4];
+    const titleMatch = /<h3\b[^>]*>([\s\S]*?)<\/h3>/i.exec(block);
+    if (!titleMatch) continue;
+
+    const title = clean(titleMatch[1], 100);
+    const countMatch = /<span\b[^>]*class=["'][^"']*\bnum\b[^"']*["'][^>]*>([\s\S]*?)<\/span>/i.exec(block);
+    const count = countMatch
+      ? Number(clean(countMatch[1], 20).replace(/[^0-9]/g, "")) || 0
+      : 0;
+
+    const imageMatch = /<img\b[^>]*>/i.exec(block);
+    const poster = imageMatch
+      ? imageUrl(
+          attr(imageMatch[0], "src") || attr(imageMatch[0], "data-src"),
+          BASE + "/estudios/"
+        )
+      : undefined;
+
+    if (!title) continue;
+
+    seen.add(slug);
+    studios.push({ slug, title, count, poster });
+  }
+
+  return studios;
 }
 
 function srcsetUrl(value) {
@@ -306,6 +397,18 @@ function catalogItems(cards) {
   const seriesMap = new Map();
 
   for (const c of cards) {
+    if (c.source === "hentaila") {
+      result.push({
+        id: "h~" + c.slug,
+        ref: "h~" + c.slug,
+        title: c.title,
+        kind: "series",
+        poster: c.poster,
+        genres: ["anime"]
+      });
+      continue;
+    }
+
     const ep = splitEpisode(c.slug);
 
     if (!ep) {
@@ -370,10 +473,6 @@ export async function search(query) {
     })
   );
 
-  if (answers.every(a => a === null)) {
-    throw kino.error("unavailable", "el sitio no respondió");
-  }
-
   const found = [];
   const seen = new Set();
 
@@ -387,12 +486,59 @@ export async function search(query) {
     }
   }
 
+  // Catálogo combinado: VeoHentai + Hentaila.com
+  let hentailaResponded = false;
+  const hentailaSeen = new Set();
+
+  const normalizeTitle = value =>
+    String(value || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim();
+
+  for (const term of terms) {
+    try {
+      const cards = await searchHentailaCatalog(term);
+      hentailaResponded = true;
+
+      for (const c of cards) {
+        const slugKey = String(c.slug || "").toLowerCase();
+        if (!slugKey || hentailaSeen.has(slugKey)) continue;
+        hentailaSeen.add(slugKey);
+
+        const key = normalizeTitle(c.title);
+        const duplicate = found.some(v => {
+          const veoTitle = normalizeTitle(v.title);
+
+          return veoTitle === key ||
+            (key.split(" ").length >= 2 && veoTitle.startsWith(key + " "));
+        });
+
+        if (!duplicate) {
+          found.push({ ...c, source: "hentaila" });
+        }
+      }
+    } catch (e) {
+      log("Búsqueda Hentaila.com falló", term, e.message);
+    }
+  }
+
+  if (answers.every(a => a === null) && !hentailaResponded) {
+    throw kino.error("unavailable", "ninguno de los catálogos respondió");
+  }
+
   const relevant = kino.rank.filterRelevant(found, terms, c => c.title);
   const kept = relevant.length ? relevant : found;
 
   const sorted = kino.rank.sortBySimilarity(kept, terms, c => c.title);
 
-  return catalogItems(sorted).slice(0, MAX_ITEMS);
+  const result = catalogItems(sorted).slice(0, MAX_ITEMS);
+  log("DEBUG Cherry:", JSON.stringify(result.filter(x =>
+    String(x.ref || "").includes("cherry-and-gals")
+  )));
+  return result;
 }
 
 // ---- inicio -----------------------------------------------------------------
@@ -470,6 +616,12 @@ export async function getGenres() {
   return parseGenres(html);
 }
 
+
+export async function getStudios() {
+  const html = await getText(abs("/estudios/"), BASE + "/");
+  return parseStudios(html);
+}
+
 async function getGenrePage(slug, page = 1) {
   const value = String(slug || "").trim();
   if (!/^[a-z0-9-]+$/i.test(value)) throw new Error("Genero no valido");
@@ -486,6 +638,24 @@ async function getGenrePage(slug, page = 1) {
 export async function getGenreCatalog(slug, page = 1) {
   return (await getGenrePage(slug, page)).items;
 }
+
+async function getStudioPage(slug, page = 1) {
+  const value = String(slug || "").trim();
+  if (!/^[a-z0-9-]+$/i.test(value)) throw new Error("Estudio no valido");
+  const basePath = "/brand/" + value + "/";
+  const url = abs(page > 1 ? basePath + "page/" + page + "/" : basePath);
+  const html = await getText(url, BASE + "/");
+  const items = catalogItems(parseCards(html, url));
+  const re = new RegExp("page/([0-9]+)/", "g");
+  const links = [...html.matchAll(re)];
+  const totalPages = Math.max(page, 1, ...links.map(x => Number(x[1])));
+  return { items, totalPages };
+}
+
+export async function getStudioCatalog(slug, page = 1) {
+  return (await getStudioPage(slug, page)).items;
+}
+
 // ---- episodios --------------------------------------------------------------
 
 export async function episodes(ref) {
@@ -494,18 +664,72 @@ export async function episodes(ref) {
   const parts = String(ref || "").split("~");
   const slug = parts[1] || "";
 
+  // Ficha y episodios de Hentaila.com
+  if (parts[0] === "h" && slug) {
+    const url = HENTAILA_COM + "/media/" + slug;
+    const html = await getText(url, HENTAILA_COM + "/");
+    const titleM = /<h1\b[^>]*>([\s\S]*?)<\/h1>/i.exec(html);
+    const seriesName = clean(titleM ? titleM[1] : slug.replace(/-/g, " "), 200);
+    const poster = extractImage(html, url);
+    const list = parseHentailaEpisodes(html, slug, seriesName);
+
+    if (!list.length) {
+      throw kino.error("not_found", "esa serie no tiene episodios");
+    }
+
+    let overview = "";
+    try {
+      overview = await getHentailaSynopsis(slug);
+    } catch (e) {
+      log("Hentaila synopsis:", e.message);
+    }
+
+    return {
+      series: {
+        title: seriesName,
+        poster,
+        genres: ["anime"],
+        overview
+      },
+      episodes: list
+    };
+  }
+
+
   if (parts[0] !== "s" || !slug) {
     throw kino.error("not_found", "esa serie ya no existe");
   }
 
   const seriesUrl = abs("/serie/" + slug + "/");
   let sourceUrl = seriesUrl;
-  let html;
+  let html = "";
   let fromSearch = false;
+
+  const normalizedSlug = slug.replace(/[-_]/g, "").toLowerCase();
+
+  const findMatchingCards = (page, pageUrl) =>
+    parseCards(page, pageUrl).filter(c => {
+      const ep = splitEpisode(c.slug);
+      if (!ep) return false;
+
+      const candidate = ep.slug.replace(/[-_]/g, "").toLowerCase();
+
+      return candidate === normalizedSlug ||
+        (candidate.startsWith(normalizedSlug) &&
+         /^\\d+$/.test(candidate.slice(normalizedSlug.length)));
+    });
+
+  let matchingCards = [];
 
   try {
     html = await getText(seriesUrl, BASE + "/");
-  } catch (originalError) {
+    matchingCards = findMatchingCards(html, seriesUrl);
+  } catch (e) {
+    log("VeoHentai serie:", e.message);
+  }
+
+  // Si la p?gina responde vac?a o no contiene episodios, buscar por t?tulo.
+  if (!matchingCards.length) {
     const searchTerm = slug.replace(/_/g, "-")
       .split("-").slice(0, 2).join("-");
 
@@ -514,25 +738,16 @@ export async function episodes(ref) {
     try {
       html = await getText(sourceUrl, BASE + "/");
       fromSearch = true;
-      log("episodios: usando búsqueda alternativa", slug);
+      matchingCards = findMatchingCards(html, sourceUrl);
+      log("episodios: b?squeda alternativa", slug, matchingCards.length);
     } catch (e) {
-      throw kino.error(
-        "not_found",
-        "no se pudo abrir la serie: " + originalError.message
-      );
+      log("VeoHentai b?squeda alternativa:", e.message);
     }
   }
 
   const titleM = fromSearch
     ? null
     : /<h1\b[^>]*>([\s\S]*?)<\/h1>/i.exec(html);
-
-  const normalizedSlug = slug.replace(/[-_]/g, "");
-
-  const matchingCards = parseCards(html, sourceUrl).filter(c => {
-    const ep = splitEpisode(c.slug);
-    return ep && ep.slug.replace(/[-_]/g, "") === normalizedSlug;
-  });
 
   const seriesName = fromSearch
     ? seriesTitle(matchingCards[0]?.title || "", slug)
@@ -571,11 +786,31 @@ export async function episodes(ref) {
 
   list.sort((a, b) => a.number - b.number);
 
+  let overview = "";
+  try {
+    const episodeOneUrl = abs("/ver/" + slug + "-episodio-1/");
+    overview = extractVeoEpisodeDescription(
+      await getText(episodeOneUrl, BASE + "/")
+    );
+  } catch (e) {
+    log("VeoHentai synopsis:", e.message);
+  }
+
+  if (!overview) {
+    try {
+      const hentailaSlug = await findHentailaSlug(seriesName);
+      overview = await getHentailaSynopsis(hentailaSlug);
+    } catch (e) {
+      log("Hentaila fallback synopsis:", e.message);
+    }
+  }
+
   return {
     series: {
       title: seriesName,
       poster: seriesPoster,
-      genres: ["anime"]
+      genres: ["anime"],
+      overview
     },
     episodes: list
   };
@@ -901,6 +1136,59 @@ async function findHentailaSlug(title) {
   return best.slug;
 }
 
+
+function parseHentailaCards(html) {
+  const articles = html.match(/<article\b[^>]*>[\s\S]*?<\/article>/gi) || [];
+  const out = [];
+  const seen = new Set();
+  for (const article of articles) {
+    const link = /<a\b[^>]*href\s*=\s*(["'])(?:https?:\/\/(?:www\.)?hentaila\.com)?\/media\/([^"'\/\s?#]+)\1/i.exec(article);
+    if (!link) continue;
+    const slug = link[2];
+    if (seen.has(slug)) continue;
+    seen.add(slug);
+    const titleMatch = /<h3\b[^>]*>([\s\S]*?)<\/h3>/i.exec(article);
+    out.push({
+      slug,
+      title: clean(titleMatch?.[1] || slug.replace(/-/g, " "), 200),
+      poster: extractImage(article, HENTAILA_COM + "/")
+    });
+  }
+  return out;
+}
+
+async function searchHentailaCatalog(query) {
+  const url = "https://www5.hentaila.com/catalogo?search=" + encodeURIComponent(query);
+  return parseHentailaCards(await getText(url, HENTAILA_COM + "/"));
+}
+
+function parseHentailaEpisodes(html, slug, title) {
+  const re = /<a\b[^>]*href\s*=\s*(["'])\/media\/([^"'\/?#]+)\/(\d+)\/?\1[^>]*>([\s\S]*?)<\/a>/gi;
+  const episodes = [];
+  const seen = new Set();
+  let m;
+
+  while ((m = re.exec(html))) {
+    if (m[2] !== slug) continue;
+
+    const num = Number(m[3]);
+    if (!num || seen.has(num)) continue;
+    seen.add(num);
+
+    const nameM = /class=["'][^"']*sr-only[^"']*["'][^>]*>([\s\S]*?)<\/span>/i.exec(m[4]);
+
+    episodes.push({
+      season: 1,
+      number: num,
+      ref: "he~" + slug + "~" + num + "~" +
+        encodeURIComponent(title).replace(/~/g, "%7E"),
+      title: clean(nameM?.[1] || "Episodio " + num, 200)
+    });
+  }
+
+  return episodes.sort((a, b) => a.number - b.number).slice(0, MAX_EPISODES);
+}
+
 async function resolveHentailaCom(slug, num, title) {
   let cleanSlug = String(slug).replace(/^\/+|\/+$/g, "");
 
@@ -1199,6 +1487,44 @@ export async function resolve(ref) {
     }
   }
 
+  // Episodios procedentes del catálogo de Hentaila.com.
+  if (parts[0] === "he" && parts[1]) {
+    const slug = parts[1];
+    const num = Number(parts[2]) || 1;
+
+    try {
+      const stream = await resolveHentailaCom(slug, num);
+      const alternatives = (stream.alternatives || []).slice();
+
+      alternatives.push({
+        label: "Hentaila.tv",
+        ref: "t~" + slug + "~" + num
+      });
+
+      return {
+        ...stream,
+        label: "Hentaila COM",
+        alternatives
+      };
+    } catch (comError) {
+      log("Hentaila.com falló", comError.message);
+    }
+
+    try {
+      const stream = await resolveHentailaTv(slug, num);
+      return {
+        ...stream,
+        label: "Hentaila TV"
+      };
+    } catch (tvError) {
+      log("Hentaila.tv falló", tvError.message);
+      throw kino.error(
+        "unavailable",
+        "No se pudo obtener el video desde ninguno de los reproductores"
+      );
+    }
+  }
+
   if (parts[0] !== "v" || !parts[1]) {
     throw kino.error("not_found", "Episodio inválido");
   }
@@ -1255,14 +1581,25 @@ try {
 // Caché de sesión: las filas del catálogo son ~52 KB y el estado tope es 64 KB
 let rowsCache = null;
 let genresCache = null;
+let genreItemsCache = [];
+let genreCacheSlug = null;
+let studiosCache = null;
+let studioItemsCache = [];
+let studioCacheSlug = null;
 
 export async function screen({ state = {}, device = 'phone', size = 'compact' } = {}) {
   const isTv = device === 'tv';
   const cols = isTv ? 6 : { compact: 3, medium: 4, expanded: 5 };
-  const section = state.section === 'genres' ? 'genres' : 'catalog';
+  const section = state.section === 'genres' ? 'genres' : state.section === 'studios' ? 'studios' : 'catalog';
   const results = Array.isArray(state.results) ? state.results : [];
   const genres  = Array.isArray(state.genres) && state.genres.length > 0 ? state.genres : (genresCache || []);
-  const genreItems = Array.isArray(state.genreItems) ? state.genreItems : [];
+  const genreItems = state.selectedGenre && genreCacheSlug === state.selectedGenre
+    ? genreItemsCache
+    : (Array.isArray(state.genreItems) ? state.genreItems : []);
+  const studios = Array.isArray(state.studios) && state.studios.length > 0 ? state.studios : (studiosCache || []);
+  const studioItems = state.selectedStudio && studioCacheSlug === state.selectedStudio
+    ? studioItemsCache
+    : (Array.isArray(state.studioItems) ? state.studioItems : []);
 
   // Las filas viven en la caché de sesión: volver al catálogo no vuelve a pedirlas
   let rows = Array.isArray(state.rows) ? state.rows : rowsCache;
@@ -1326,7 +1663,8 @@ export async function screen({ state = {}, device = 'phone', size = 'compact' } 
           { type: 'Text', text: state.selectedGenreTitle || 'Género', style: 'h3', flex: 1 }
         ]},
         ...(genreItems.length
-          ? [{ type: 'titleGrid', columns: cols, items: genreItems,
+          ? [{ type: 'list', columns: cols,
+               items: genreItems.map(item => ({ type: 'titleCard', item, size: 'medium' })),
                onEndReached: state.genreHasMore ? { event: 'genre-more' } : undefined,
                loadingMore: state.genreLoadingMore === true,
                done: !state.genreHasMore }]
@@ -1360,15 +1698,60 @@ export async function screen({ state = {}, device = 'phone', size = 'compact' } 
       // La sección ya está pintada: el tick `hydrate-genres` trae la lista
       bodyChildren = [{ type: 'loading' }];
     }
+
+  } else if (section === 'studios') {
+    if (state.selectedStudio) {
+      bodyChildren = [
+        { type: 'Row', padding: 16, gap: 8, crossAxisAlignment: 'center', children: [
+          { type: 'IconButton', icon: 'arrow_back', labelText: 'Volver', labelTextEn: 'Back', onPressed: 'back-studios' },
+          { type: 'Text', text: state.selectedStudioTitle || 'Estudio', style: 'h3', flex: 1 }
+        ]},
+        ...(studioItems.length
+          ? [{ type: 'list', columns: cols,
+               items: studioItems.map(item => ({ type: 'titleCard', item, size: 'medium' })),
+               onEndReached: state.studioHasMore ? { event: 'studio-more' } : undefined,
+               loadingMore: state.studioLoadingMore === true,
+               done: !state.studioHasMore }]
+          : [state.studioLoadingMore
+              ? { type: 'loading' }
+              : { type: 'emptyState', title: 'Sin t?tulos', titleEn: 'No titles',
+                  text: 'Este estudio no tiene contenido disponible.',
+                  textEn: 'This studio has no content available.' }
+            ]
+        )
+      ];
+    } else if (studios.length > 0) {
+      bodyChildren = [
+        { type: 'Text', text: 'Explorar por estudio', textEn: 'Browse by studio',
+          style: 'h4', padding: 16 },
+        { type: 'Column', gap: 0, children: studios.map(studio => ({
+            type: 'ListTile',
+            key: 'studio-' + studio.slug,
+            title: studio.title,
+            dense: true,
+            onTap: { event: 'studio', arg: studio.slug }
+          })) }
+      ];
+    } else if (state.studiosError && state.studiosTried) {
+      bodyChildren = [{ type: 'errorState',
+        title: 'Error al cargar estudios', titleEn: 'Could not load studios',
+        text: 'Toca para reintentar.', textEn: 'Tap to retry.',
+        onRetry: 'retry-studios' }];
+    } else {
+      bodyChildren = [{ type: 'loading' }];
+    }
   }
 
+
   // Mientras falten los géneros, un tick los pide y la pantalla ya muestra su sección
-  const needsGenres = genres.length === 0 && !(state.genresTried === true && state.genresError === true);
+  const needsGenres = section === 'genres' && genres.length === 0 && !(state.genresTried === true && state.genresError === true);
+  const needsStudios = section === 'studios' && studios.length === 0 && !(state.studiosTried === true && state.studiosError === true);
+  const hydrationEvent = needsStudios ? 'hydrate-studios' : needsGenres ? 'hydrate-genres' : null;
 
   // ── Scaffold con AppBar + NavigationBar ─────────────────────────────────
   return {
     type: 'Scaffold',
-    ...(needsGenres ? { every: { ms: 1000, event: 'hydrate-genres' } } : {}),
+    ...(hydrationEvent ? { every: { ms: 1000, event: hydrationEvent } } : {}),
     appBar: {
       type: 'AppBar',
       dense: true,
@@ -1386,7 +1769,8 @@ export async function screen({ state = {}, device = 'phone', size = 'compact' } 
           type: 'tabs',
           tabs: [
             { value: 'catalog', label: 'Catálogo' },
-            { value: 'genres', label: 'Géneros' }
+            { value: 'genres', label: 'Géneros' },
+            { value: 'studios', label: 'Estudios' }
           ],
           value: section,
           onChange: 'section',
@@ -1405,7 +1789,8 @@ export async function screen({ state = {}, device = 'phone', size = 'compact' } 
       onChanged: 'section',
       items: [
         { key: 'catalog', icon: 'home',  label: 'Catálogo', labelEn: 'Catalog' },
-        { key: 'genres',  icon: 'list',  label: 'Géneros',  labelEn: 'Genres'  }
+        { key: 'genres',  icon: 'list',  label: 'Géneros',  labelEn: 'Genres'  },
+        { key: 'studios', icon: 'list', label: 'Estudios', labelEn: 'Studios' }
       ]
     }
     }),
@@ -1453,7 +1838,8 @@ export async function screenEvent({ name, value, arg, state = {} }) {
   if (name === 'section') {
     // Cambia de sección al instante: si faltan datos, la pantalla pinta su spinner
     const base = { ...state, section: value, results: [], searched: false, searchOpen: false,
-                   selectedGenre: null, genreItems: [] };
+                   selectedGenre: null, genreItems: [],
+                   selectedStudio: null, studioItems: [] };
     if (value === 'genres') {
       const cached = Array.isArray(state.genres) && state.genres.length > 0 ? state.genres : genresCache;
       if (cached && cached.length > 0) {
@@ -1487,9 +1873,13 @@ export async function screenEvent({ name, value, arg, state = {} }) {
     try {
       const result = await getGenrePage(slug, 1);
       const selected = (state.genres || []).find(g => g.slug === slug);
+      genreItemsCache = result.items;
+      genreCacheSlug = slug;
+      const cleanState = { ...state };
+      delete cleanState.genreItems;
       return {
         state: {
-          ...state,
+          ...cleanState,
           section: 'genres',
           selectedGenre: slug,
           selectedGenreTitle: selected?.title || slug,
@@ -1510,7 +1900,9 @@ export async function screenEvent({ name, value, arg, state = {} }) {
     const page  = Number(state.genrePage || 1) + 1;
     try {
       const result   = await getGenrePage(slug, page);
-      const existing = Array.isArray(state.genreItems) ? state.genreItems : [];
+      const existing = genreCacheSlug === slug
+        ? genreItemsCache
+        : (Array.isArray(state.genreItems) ? state.genreItems : []);
       const seen     = new Set(existing.map(i => i.id || i.ref || i.title));
       const added    = result.items.filter(i => {
         const k = i.id || i.ref || i.title;
@@ -1518,8 +1910,12 @@ export async function screenEvent({ name, value, arg, state = {} }) {
         seen.add(k);
         return true;
       });
+      genreItemsCache = [...existing, ...added];
+      genreCacheSlug = slug;
+      const cleanState = { ...state };
+      delete cleanState.genreItems;
       return {
-        state: { ...state, genreItems: [...existing, ...added], genrePage: page,
+        state: { ...cleanState, genrePage: page,
                  genreHasMore: page < result.totalPages, genreLoadingMore: false }
       };
     } catch (e) {
@@ -1529,7 +1925,170 @@ export async function screenEvent({ name, value, arg, state = {} }) {
   }
 
   if (name === 'back-genres') {
+    genreItemsCache = [];
+    genreCacheSlug = null;
     return { state: { ...state, selectedGenre: null, genreItems: [] } };
+  }
+
+
+  if (name === 'hydrate-studios') {
+    if (Array.isArray(state.studios) && state.studios.length > 0) return null;
+    try {
+      const studios = studiosCache && studiosCache.length > 0 ? studiosCache : await getStudios();
+      studiosCache = studios;
+      return { state: { ...state, studios, studiosLoading: false, studiosTried: true, studiosError: false } };
+    } catch (e) {
+      log('Carga de estudios fallida', e.message);
+      return { state: { ...state, studiosLoading: false, studiosTried: true, studiosError: true } };
+    }
+  }
+
+  if (name === 'retry-studios') {
+    return { state: { ...state, studios: [], studiosLoading: true, studiosTried: false, studiosError: false } };
+  }
+
+  if (name === 'studio') {
+    const slug = String(arg || '');
+    try {
+      const result = await getStudioPage(slug, 1);
+      const selected = (state.studios || []).find(studio => studio.slug === slug);
+      studioItemsCache = result.items;
+      studioCacheSlug = slug;
+      const cleanState = { ...state };
+      delete cleanState.studioItems;
+      return {
+        state: {
+          ...cleanState,
+          section: 'studios',
+          selectedStudio: slug,
+          selectedStudioTitle: selected?.title || slug,
+          studioItems: result.items,
+          studioPage: 1,
+          studioHasMore: result.totalPages > 1,
+          studioLoadingMore: false
+        }
+      };
+    } catch (e) {
+      log('Carga de estudio fallida', e.message);
+      return { toast: 'No se pudo cargar ese estudio.' };
+    }
+  }
+
+  if (name === 'studio-more') {
+    const slug = String(state.selectedStudio || '');
+    const page = Number(state.studioPage || 1) + 1;
+    try {
+      const result = await getStudioPage(slug, page);
+      const existing = studioCacheSlug === slug
+        ? studioItemsCache
+        : (Array.isArray(state.studioItems) ? state.studioItems : []);
+      const seen = new Set(existing.map(i => i.id || i.ref || i.title));
+      const added = result.items.filter(i => {
+        const k = i.id || i.ref || i.title;
+        if (seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      });
+      studioItemsCache = [...existing, ...added];
+      studioCacheSlug = slug;
+      const cleanState = { ...state };
+      delete cleanState.studioItems;
+      return {
+        state: {
+          ...cleanState,
+          studioPage: page,
+          studioHasMore: page < result.totalPages,
+          studioLoadingMore: false
+        }
+      };
+    } catch (e) {
+      log('Carga de m?s t?tulos del estudio fallida', e.message);
+      return { state: { ...state, studioLoadingMore: false }, toast: 'No se pudieron cargar m?s t?tulos.' };
+    }
+  }
+
+  if (name === 'back-studios') {
+    studioItemsCache = [];
+    studioCacheSlug = null;
+    return { state: { ...state, selectedStudio: null, studioItems: [] } };
+  }
+
+  if (name === 'hydrate-studios') {
+    if (Array.isArray(state.studios) && state.studios.length > 0) return null;
+    try {
+      const studios = studiosCache && studiosCache.length > 0 ? studiosCache : await getStudios();
+      studiosCache = studios;
+      return { state: { ...state, studios, studiosLoading: false, studiosTried: true, studiosError: false } };
+    } catch (e) {
+      log('Carga de estudios fallida', e.message);
+      return { state: { ...state, studiosLoading: false, studiosTried: true, studiosError: true } };
+    }
+  }
+
+  if (name === 'retry-studios') {
+    return { state: { ...state, studios: [], studiosLoading: true, studiosTried: false, studiosError: false } };
+  }
+
+  if (name === 'studio') {
+    const slug = String(arg || '');
+    try {
+      const result = await getStudioPage(slug, 1);
+      const selected = (state.studios || []).find(x => x.slug === slug);
+      studioItemsCache = result.items;
+      studioCacheSlug = slug;
+      const cleanState = { ...state };
+      delete cleanState.studioItems;
+      return {
+        state: {
+          ...cleanState,
+          section: 'studios',
+          selectedStudio: slug,
+          selectedStudioTitle: selected?.title || slug,
+          studioItems: result.items,
+          studioPage: 1,
+          studioHasMore: result.totalPages > 1,
+          studioLoadingMore: false
+        }
+      };
+    } catch (e) {
+      log('Carga de estudio fallida', e.message);
+      return { toast: 'No se pudo cargar ese estudio.' };
+    }
+  }
+
+  if (name === 'studio-more') {
+    const slug = String(state.selectedStudio || '');
+    const page = Number(state.studioPage || 1) + 1;
+    try {
+      const result = await getStudioPage(slug, page);
+      const existing = studioCacheSlug === slug
+        ? studioItemsCache
+        : (Array.isArray(state.studioItems) ? state.studioItems : []);
+      const seen = new Set(existing.map(i => i.id || i.ref || i.title));
+      const added = result.items.filter(i => {
+        const k = i.id || i.ref || i.title;
+        if (seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      });
+      studioItemsCache = [...existing, ...added];
+      studioCacheSlug = slug;
+      const cleanState = { ...state };
+      delete cleanState.studioItems;
+      return {
+        state: { ...cleanState, studioPage: page,
+                 studioHasMore: page < result.totalPages, studioLoadingMore: false }
+      };
+    } catch (e) {
+      log('Carga de mas titulos fallida', e.message);
+      return { state: { ...state, studioLoadingMore: false }, toast: 'No se pudieron cargar mas titulos.' };
+    }
+  }
+
+  if (name === 'back-studios') {
+    studioItemsCache = [];
+    studioCacheSlug = null;
+    return { state: { ...state, selectedStudio: null, studioItems: [] } };
   }
 
   if (name === 'typed') {
